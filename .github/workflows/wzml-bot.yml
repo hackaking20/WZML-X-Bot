@@ -21,15 +21,29 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Pull base image
-        run: docker pull mysterysd/wzmlx:v3
-
       - name: Download cloudflared + install deps
         run: |
           wget -q -O /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
           chmod +x /tmp/cloudflared
           /tmp/cloudflared --version
           pip install -q pymongo requests
+
+      - name: Clone and build bot image
+        env:
+          UPSTREAM_REPO: ${{ secrets.UPSTREAM_REPO }}
+          UPSTREAM_BRANCH: ${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}
+        shell: bash {0}
+        run: |
+          UP_REPO="${UPSTREAM_REPO:-https://github.com/SilentDemonSD/WZML-X}"
+          UP_BRANCH="${UPSTREAM_BRANCH:-wzv3}"
+
+          echo "Cloning $UP_REPO (branch: $UP_BRANCH)..."
+          git clone --depth 1 -b "$UP_BRANCH" "$UP_REPO" /tmp/wzml-src
+
+          echo "Building Docker image..."
+          cd /tmp/wzml-src
+          docker build -t wzml-bot:latest . 2>&1 | tail -20
+          echo "Image built successfully."
 
       - name: Send startup ntfy notification
         env:
@@ -41,17 +55,8 @@ jobs:
                "https://ntfy.sh/${NTFY_TOPIC}" || true
 
       - name: Run bot container
-        env:
-          UPSTREAM_REPO: ${{ secrets.UPSTREAM_REPO }}
-          UPSTREAM_BRANCH: ${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}
         shell: bash {0}
         run: |
-          # Default UPSTREAM_REPO to WZML-X by SilentDemonSD if not set
-          UP_REPO="${UPSTREAM_REPO:-https://github.com/SilentDemonSD/WZML-X}"
-          UP_BRANCH="${UPSTREAM_BRANCH:-wzv3}"
-
-          echo "Using UPSTREAM_REPO=$UP_REPO branch=$UP_BRANCH"
-
           docker run -d \
             --name wzml_bot \
             -e BOT_TOKEN="${{ secrets.BOT_TOKEN }}" \
@@ -59,8 +64,8 @@ jobs:
             -e TELEGRAM_HASH="${{ secrets.TELEGRAM_HASH }}" \
             -e OWNER_ID="${{ secrets.OWNER_ID }}" \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-            -e UPSTREAM_REPO="$UP_REPO" \
-            -e UPSTREAM_BRANCH="$UP_BRANCH" \
+            -e UPSTREAM_REPO="${{ secrets.UPSTREAM_REPO }}" \
+            -e UPSTREAM_BRANCH="${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}" \
             -e AUTHORIZED_CHATS="${{ secrets.AUTHORIZED_CHATS }}" \
             -e SUDO_USERS="${{ secrets.SUDO_USERS }}" \
             -e USER_SESSION_STRING="${{ secrets.USER_SESSION_STRING }}" \
@@ -80,18 +85,17 @@ jobs:
             -e WEB_ACCESS_PASSWORD="${{ secrets.WEB_ACCESS_PASSWORD }}" \
             -e TIMEZONE="Asia/Kolkata" \
             -p 8080:8080 \
-            mysterysd/wzmlx:v3
+            wzml-bot:latest
 
-          echo "Waiting 30 seconds for bot startup..."
-          sleep 30
+          echo "Waiting 60 seconds for bot startup..."
+          sleep 60
 
-          # --- Check if container is still running ---
           if docker inspect -f '{{.State.Running}}' wzml_bot 2>/dev/null | grep -q true; then
             echo "=== Bot container is RUNNING ==="
             echo "=== DOCKER LOGS (last 30 lines) ==="
             docker logs wzml_bot 2>&1 | tail -30
           else
-            echo "=== !!! Bot container CRASHED immediately !!! ==="
+            echo "=== !!! Bot container CRASHED !!! ==="
             echo "=== FULL DOCKER LOGS ==="
             docker logs wzml_bot 2>&1 || echo "(no logs)"
             echo ""
@@ -100,21 +104,19 @@ jobs:
             echo ""
             echo "=== Re-running in foreground to capture error ==="
             docker rm -f wzml_bot 2>/dev/null || true
-            timeout 30 docker run --rm \
+            timeout 60 docker run --rm \
               --name wzml_bot_debug \
               -e BOT_TOKEN="${{ secrets.BOT_TOKEN }}" \
               -e TELEGRAM_API="${{ secrets.TELEGRAM_API }}" \
               -e TELEGRAM_HASH="${{ secrets.TELEGRAM_HASH }}" \
               -e OWNER_ID="${{ secrets.OWNER_ID }}" \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-              -e UPSTREAM_REPO="$UP_REPO" \
-              -e UPSTREAM_BRANCH="$UP_BRANCH" \
+              -e UPSTREAM_REPO="${{ secrets.UPSTREAM_REPO }}" \
+              -e UPSTREAM_BRANCH="${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}" \
               -e TIMEZONE="Asia/Kolkata" \
-              mysterysd/wzmlx:v3 2>&1 | tail -50 || echo "(foreground run timed out or failed)"
+              wzml-bot:latest 2>&1 | tail -80 || echo "(foreground run timed out or failed)"
             echo ""
             echo "=== CRASH DIAGNOSTICS COMPLETE ==="
-            echo "The bot container is not running. Check the logs above for the error."
-            echo "Re-creating container in detached mode anyway (keep-alive will retry)..."
             docker rm -f wzml_bot 2>/dev/null || true
             docker run -d \
               --name wzml_bot \
@@ -123,8 +125,8 @@ jobs:
               -e TELEGRAM_HASH="${{ secrets.TELEGRAM_HASH }}" \
               -e OWNER_ID="${{ secrets.OWNER_ID }}" \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
-              -e UPSTREAM_REPO="$UP_REPO" \
-              -e UPSTREAM_BRANCH="$UP_BRANCH" \
+              -e UPSTREAM_REPO="${{ secrets.UPSTREAM_REPO }}" \
+              -e UPSTREAM_BRANCH="${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}" \
               -e AUTHORIZED_CHATS="${{ secrets.AUTHORIZED_CHATS }}" \
               -e SUDO_USERS="${{ secrets.SUDO_USERS }}" \
               -e USER_SESSION_STRING="${{ secrets.USER_SESSION_STRING }}" \
@@ -144,7 +146,7 @@ jobs:
               -e WEB_ACCESS_PASSWORD="${{ secrets.WEB_ACCESS_PASSWORD }}" \
               -e TIMEZONE="Asia/Kolkata" \
               -p 8080:8080 \
-              mysterysd/wzmlx:v3
+              wzml-bot:latest
             sleep 15
           fi
 
