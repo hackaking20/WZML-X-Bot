@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Broadcast a message to all bot users via Telegram API.
 
-Usage: python3 broadcast.py "Your message here"
+Usage:
+  python3 broadcast.py "<regular_message>" ["<owner_message>"]
+
+- regular_message: sent to all non-owner users (no URL)
+- owner_message:  sent ONLY to the owner (with URL). If omitted, owner gets the same as regular.
+
 Reads BOT_TOKEN, DATABASE_URL, OWNER_ID from environment.
 Queries MongoDB for all PM users + registered users, then sends
-the message to each via the Telegram Bot API.
+the appropriate message to each via the Telegram Bot API.
 """
 import sys
 import os
@@ -16,7 +21,9 @@ import requests
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 OWNER_ID = os.environ.get("OWNER_ID", "0")
-MESSAGE = sys.argv[1] if len(sys.argv) > 1 else "Bot is live!"
+
+REGULAR_MSG = sys.argv[1] if len(sys.argv) > 1 else "Bot is live!"
+OWNER_MSG = sys.argv[2] if len(sys.argv) > 2 else REGULAR_MSG
 
 if not BOT_TOKEN:
     print("ERROR: BOT_TOKEN not set")
@@ -25,6 +32,12 @@ if not BOT_TOKEN:
 bot_id = BOT_TOKEN.split(":")[0]
 salt = b"wzmlx_v3_db_partition_salt"
 partition = f"p_{sha256(salt + bot_id.encode()).hexdigest()[:24]}"
+
+owner_id = 0
+try:
+    owner_id = int(OWNER_ID)
+except (ValueError, TypeError):
+    pass
 
 uids = []
 
@@ -56,12 +69,8 @@ if DATABASE_URL:
         print(f"MongoDB error: {e}")
 
 # Always include the owner
-try:
-    oid = int(OWNER_ID)
-    if oid and oid not in uids:
-        uids.insert(0, oid)
-except (ValueError, TypeError):
-    pass
+if owner_id and owner_id not in uids:
+    uids.insert(0, owner_id)
 
 if not uids:
     print("No users found at all. Skipping broadcast.")
@@ -72,12 +81,14 @@ api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 success, failed = 0, 0
 
 for uid in uids:
+    # Owner gets the owner message (with URL); everyone else gets the regular message
+    msg = OWNER_MSG if uid == owner_id else REGULAR_MSG
     try:
         resp = requests.post(
             api_url,
             json={
                 "chat_id": uid,
-                "text": MESSAGE,
+                "text": msg,
                 "parse_mode": "HTML",
                 "disable_web_page_preview": False,
             },
