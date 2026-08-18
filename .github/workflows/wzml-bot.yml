@@ -186,14 +186,16 @@ jobs:
           # --- Background: startup broadcast at +5 min ---
           (
             sleep 300
+            # Owner gets the URL; regular users get a plain message without the URL
+            REGULAR_MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.')
             if [ -n "$TUNNEL_URL" ]; then
-              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nWeb UI: %s\n\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.' "$TUNNEL_URL")
+              OWNER_MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nWeb UI: %s\n\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.' "$TUNNEL_URL")
             else
-              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.')
+              OWNER_MSG="$REGULAR_MSG"
             fi
 
             echo "[$(date +%H:%M:%S)] Sending startup broadcast to all users..."
-            python3 broadcast.py "$MSG" || echo "Broadcast failed (non-fatal)"
+            python3 broadcast.py "$REGULAR_MSG" "$OWNER_MSG" || echo "Broadcast failed (non-fatal)"
 
             curl -s -X POST \
                  -H "Title: WZML-X Bot is LIVE!" \
@@ -208,6 +210,7 @@ jobs:
           PRE_SHUTDOWN_WAIT=$((TOTAL_SEC - 600))
           (
             sleep $PRE_SHUTDOWN_WAIT
+            # Same message for owner and regular users on shutdown (no URL needed)
             MSG=$(printf 'WZML-X Bot Restarting Soon!\n\nThe bot will go down in 10 minutes for a scheduled restart.\nAll active downloads will be paused and resume automatically after restart.\n\nDowntime: ~30 minutes\nThe bot will come back online automatically via the scheduled timer.\n\nThank you for your patience!')
 
             echo "[$(date +%H:%M:%S)] Sending pre-shutdown broadcast to all users..."
