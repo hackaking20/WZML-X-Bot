@@ -7,14 +7,6 @@ on:
         description: 'Bot run hours (default 5)'
         required: false
         default: '5'
-      rest_minutes:
-        description: 'Rest minutes before restart (default 30)'
-        required: false
-        default: '30'
-      auto_restart:
-        description: 'Auto-restart after rest? (true/false)'
-        required: false
-        default: 'true'
 
 concurrency:
   group: wzml-bot
@@ -122,9 +114,9 @@ jobs:
           (
             sleep 300
             if [ -n "$TUNNEL_URL" ]; then
-              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nWeb UI: %s\n\nSend /help to see available commands.\nBot will run for ~5 hours, then auto-restart after 30 min rest.' "$TUNNEL_URL")
+              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nWeb UI: %s\n\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.' "$TUNNEL_URL")
             else
-              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nSend /help to see available commands.\nBot will run for ~5 hours, then auto-restart after 30 min rest.')
+              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.')
             fi
 
             echo "[$(date +%H:%M:%S)] Sending startup broadcast to all users..."
@@ -143,7 +135,7 @@ jobs:
           PRE_SHUTDOWN_WAIT=$((TOTAL_SEC - 600))
           (
             sleep $PRE_SHUTDOWN_WAIT
-            MSG=$(printf 'WZML-X Bot Restarting Soon!\n\nThe bot will go down in 10 minutes for a scheduled restart.\nAll active downloads will be paused and resume automatically after restart.\n\nDowntime: ~30 minutes\nThe bot will come back online automatically.\n\nThank you for your patience!')
+            MSG=$(printf 'WZML-X Bot Restarting Soon!\n\nThe bot will go down in 10 minutes for a scheduled restart.\nAll active downloads will be paused and resume automatically after restart.\n\nDowntime: ~30 minutes\nThe bot will come back online automatically via the scheduled timer.\n\nThank you for your patience!')
 
             echo "[$(date +%H:%M:%S)] Sending pre-shutdown broadcast to all users..."
             python3 broadcast.py "$MSG" || echo "Broadcast failed (non-fatal)"
@@ -213,86 +205,17 @@ jobs:
             fi
           done
 
-          echo "Bot run time complete."
+          echo "Bot run time complete. Stopping."
 
       - name: Stop bot container
         if: always()
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
         run: |
           echo "=== FINAL DOCKER LOGS ==="
           docker logs wzml_bot 2>&1 | tail -50 || true
           docker stop wzml_bot 2>/dev/null || true
           docker rm wzml_bot 2>/dev/null || true
-
-      - name: Rest period + auto-restart
-        env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          AUTO_RESTART: ${{ github.event.inputs.auto_restart || 'true' }}
-          REST_MINUTES: ${{ github.event.inputs.rest_minutes || '30' }}
-          GITHUB_REPO: ${{ github.repository }}
-        shell: bash {0}
-        run: |
-          AUTO_RESTART=$(echo "$AUTO_RESTART" | tr '[:upper:]' '[:lower:]')
-
-          if [ "$AUTO_RESTART" != "true" ]; then
-            echo "Auto-restart disabled."
-            curl -s -X POST -H "Title: Bot Stopped" -H "Priority: 3" -H "Tags: wave" \
-                 -d "Bot stopped. Auto-restart was disabled." "https://ntfy.sh/${NTFY_TOPIC}"
-            exit 0
-          fi
-
-          if [ -z "$PAT_TOKEN" ]; then
-            echo "ERROR: PAT_TOKEN secret is not set!"
-            curl -s -X POST -H "Title: Auto-restart Failed" -H "Priority: 5" -H "Tags: x,warning" \
-                 -d "Cannot auto-restart: PAT_TOKEN secret is not set. Add it in repo Settings -> Secrets -> Actions." \
-                 "https://ntfy.sh/${NTFY_TOPIC}"
-            exit 1
-          fi
-
-          REST_SEC=$((REST_MINUTES * 60))
-          echo "Rest period: ${REST_MINUTES} minutes, then auto-trigger next run"
-
-          curl -s -X POST -H "Title: Rest Period Started" -H "Priority: 3" -H "Tags: coffee,sleep" \
-               -d "Bot session ended. Resting ${REST_MINUTES} min. New session starts automatically." \
-               "https://ntfy.sh/${NTFY_TOPIC}"
-
-          sleep $REST_SEC
-
-          echo "Triggering new workflow run..."
-          API_URL="https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/wzml-bot.yml/dispatches"
-
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-               -H "Accept: application/vnd.github+json" \
-               -H "Authorization: Bearer ${PAT_TOKEN}" \
-               -H "X-GitHub-Api-Version: 2022-11-28" \
-               -d '{"ref":"refs/heads/main","inputs":{"hours":"5","rest_minutes":"30","auto_restart":"true"}}' \
-               "$API_URL")
-
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          echo "API response: $HTTP_CODE"
-
-          if [ "$HTTP_CODE" = "204" ]; then
-            echo "SUCCESS: New workflow run triggered!"
-            curl -s -X POST -H "Title: New Bot Starting" -H "Priority: 4" -H "Tags: rocket,refresh" \
-                 -d "New bot workflow triggered! Setup takes ~5 min. Broadcast coming soon." \
-                 "https://ntfy.sh/${NTFY_TOPIC}"
-          else
-            echo "Failed with HTTP $HTTP_CODE. Trying wzv3 branch..."
-            RESPONSE2=$(curl -s -w "\n%{http_code}" -X POST \
-                 -H "Accept: application/vnd.github+json" \
-                 -H "Authorization: Bearer ${PAT_TOKEN}" \
-                 -H "X-GitHub-Api-Version: 2022-11-28" \
-                 -d '{"ref":"refs/heads/wzv3","inputs":{"hours":"5","rest_minutes":"30","auto_restart":"true"}}' \
-                 "$API_URL")
-            HTTP_CODE2=$(echo "$RESPONSE2" | tail -1)
-            if [ "$HTTP_CODE2" = "204" ]; then
-              echo "SUCCESS with wzv3 branch!"
-              curl -s -X POST -H "Title: New Bot Starting" -H "Priority: 4" -H "Tags: rocket,refresh" \
-                   -d "New bot workflow triggered!" "https://ntfy.sh/${NTFY_TOPIC}"
-            else
-              curl -s -X POST -H "Title: Auto-restart Failed" -H "Priority: 5" -H "Tags: x,warning" \
-                   -d "Failed to trigger new run. HTTP $HTTP_CODE. Manually run from GitHub Actions tab." \
-                   "https://ntfy.sh/${NTFY_TOPIC}"
-              exit 1
-            fi
-          fi
+          curl -s -X POST -H "Title: Bot Session Ended" -H "Priority: 3" -H "Tags: wave,sleep" \
+               -d "Bot session ended after 5h. Will restart in ~30 min via scheduled timer." \
+               "https://ntfy.sh/${NTFY_TOPIC}" || true
