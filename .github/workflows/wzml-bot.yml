@@ -46,8 +46,8 @@ jobs:
           UPSTREAM_BRANCH: ${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}
         shell: bash {0}
         run: |
-          # Default UPSTREAM_REPO to the official WZML-X repo if not set
-          UP_REPO="${UPSTREAM_REPO:-https://github.com/anasty17/Mirror-Leech-Telegram-Bot}"
+          # Default UPSTREAM_REPO to WZML-X by SilentDemonSD if not set
+          UP_REPO="${UPSTREAM_REPO:-https://github.com/SilentDemonSD/WZML-X}"
           UP_BRANCH="${UPSTREAM_BRANCH:-wzv3}"
 
           echo "Using UPSTREAM_REPO=$UP_REPO branch=$UP_BRANCH"
