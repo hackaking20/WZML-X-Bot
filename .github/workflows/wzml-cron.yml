@@ -1,0 +1,93 @@
+name: WZML-X Cron Trigger
+
+# Fires every 5 hours and 30 minutes via GitHub Actions cron.
+# Uses the P81 secret (PAT) to trigger the wzml-bot.yml workflow.
+# Schedule: bot runs 5h -> stops -> 30 min gap -> cron fires -> repeat.
+
+on:
+  schedule:
+    # Every 5h30m — GitHub cron minimum granularity is 5 min.
+    # Expression: minute hour — but cron can't do "every 5h30m" natively,
+    # so we run at :00 and :30 of specific hours to approximate 5h30m intervals.
+    # This fires at 00:00, 05:30, 11:00, 16:30, 22:00 UTC (every 5h30m).
+    - cron: '0 0,11,22 * * *'
+    - cron: '30 5,16 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: wzml-cron
+  cancel-in-progress: false
+
+jobs:
+  trigger-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Trigger WZML-X Bot workflow
+        env:
+          P81: ${{ secrets.P81 }}
+          GITHUB_REPO: ${{ github.repository }}
+        shell: bash {0}
+        run: |
+          if [ -z "$P81" ]; then
+            echo "ERROR: P81 secret is not set!"
+            echo "Add your GitHub PAT as a secret named P81 in repo Settings -> Secrets -> Actions."
+            curl -s -X POST \
+                 -H "Title: Cron Trigger Failed" \
+                 -H "Priority: 5" \
+                 -H "Tags: x,warning" \
+                 -d "Cannot trigger bot: P81 secret is not set. Add it in repo Settings -> Secrets -> Actions." \
+                 "https://ntfy.sh/${NTFY_TOPIC:-JAI_HO}" || true
+            exit 1
+          fi
+
+          echo "Triggering wzml-bot.yml workflow on ${GITHUB_REPO}..."
+          API_URL="https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/wzml-bot.yml/dispatches"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+               -H "Accept: application/vnd.github+json" \
+               -H "Authorization: Bearer ${P81}" \
+               -H "X-GitHub-Api-Version: 2022-11-28" \
+               -d '{"ref":"refs/heads/main","inputs":{"hours":"5"}}' \
+               "$API_URL")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          echo "API response: HTTP $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "SUCCESS: WZML-X Bot workflow triggered!"
+            curl -s -X POST \
+                 -H "Title: Bot Auto-Starting" \
+                 -H "Priority: 4" \
+                 -H "Tags: rocket,refresh" \
+                 -d "Scheduled timer triggered the bot workflow. Bot coming online in ~5 min." \
+                 "https://ntfy.sh/${NTFY_TOPIC:-JAI_HO}" || true
+          else
+            echo "Failed with HTTP $HTTP_CODE. Trying wzv3 branch..."
+            RESPONSE2=$(curl -s -w "\n%{http_code}" -X POST \
+                 -H "Accept: application/vnd.github+json" \
+                 -H "Authorization: Bearer ${P81}" \
+                 -H "X-GitHub-Api-Version: 2022-11-28" \
+                 -d '{"ref":"refs/heads/wzv3","inputs":{"hours":"5"}}' \
+                 "$API_URL")
+            HTTP_CODE2=$(echo "$RESPONSE2" | tail -1)
+            if [ "$HTTP_CODE2" = "204" ]; then
+              echo "SUCCESS with wzv3 branch!"
+              curl -s -X POST \
+                   -H "Title: Bot Auto-Starting" \
+                   -H "Priority: 4" \
+                   -H "Tags: rocket,refresh" \
+                   -d "Scheduled timer triggered the bot workflow." \
+                   "https://ntfy.sh/${NTFY_TOPIC:-JAI_HO}" || true
+            else
+              echo "Failed with HTTP $HTTP_CODE2 on both branches."
+              curl -s -X POST \
+                   -H "Title: Cron Trigger Failed" \
+                   -H "Priority: 5" \
+                   -H "Tags: x,warning" \
+                   -d "Failed to trigger bot workflow. HTTP $HTTP_CODE / $HTTP_CODE2. Manually run from GitHub Actions tab." \
+                   "https://ntfy.sh/${NTFY_TOPIC:-JAI_HO}" || true
+              exit 1
+            fi
+          fi
