@@ -1,0 +1,298 @@
+name: WZML-X Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Bot run hours (default 5)'
+        required: false
+        default: '5'
+      rest_minutes:
+        description: 'Rest minutes before restart (default 30)'
+        required: false
+        default: '30'
+      auto_restart:
+        description: 'Auto-restart after rest? (true/false)'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: wzml-bot
+  cancel-in-progress: true
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Pull base image
+        run: docker pull mysterysd/wzmlx:v3
+
+      - name: Download cloudflared + install deps
+        run: |
+          wget -q -O /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x /tmp/cloudflared
+          /tmp/cloudflared --version
+          pip install -q pymongo requests
+
+      - name: Send startup ntfy notification
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
+        run: |
+          curl -s -H "Title: WZML-X Bot Starting" \
+               -H "Tags: rocket,gear" \
+               -d "WZML-X Bot container is starting up. Web URL + broadcast coming in ~5 min." \
+               "https://ntfy.sh/${NTFY_TOPIC}" || true
+
+      - name: Run bot container
+        run: |
+          docker run -d \
+            --name wzml_bot \
+            -e BOT_TOKEN="${{ secrets.BOT_TOKEN }}" \
+            -e TELEGRAM_API="${{ secrets.TELEGRAM_API }}" \
+            -e TELEGRAM_HASH="${{ secrets.TELEGRAM_HASH }}" \
+            -e OWNER_ID="${{ secrets.OWNER_ID }}" \
+            -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            -e UPSTREAM_REPO="${{ secrets.UPSTREAM_REPO }}" \
+            -e UPSTREAM_BRANCH="${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}" \
+            -e AUTHORIZED_CHATS="${{ secrets.AUTHORIZED_CHATS }}" \
+            -e SUDO_USERS="${{ secrets.SUDO_USERS }}" \
+            -e USER_SESSION_STRING="${{ secrets.USER_SESSION_STRING }}" \
+            -e GDRIVE_ID="${{ secrets.GDRIVE_ID }}" \
+            -e IS_TEAM_DRIVE="${{ secrets.IS_TEAM_DRIVE }}" \
+            -e INDEX_URL="${{ secrets.INDEX_URL }}" \
+            -e USE_SERVICE_ACCOUNTS="${{ secrets.USE_SERVICE_ACCOUNTS }}" \
+            -e RCLONE_PATH="${{ secrets.RCLONE_PATH }}" \
+            -e RCLONE_FLAGS="${{ secrets.RCLONE_FLAGS }}" \
+            -e MEGA_EMAIL="${{ secrets.MEGA_EMAIL }}" \
+            -e MEGA_PASSWORD="${{ secrets.MEGA_PASSWORD }}" \
+            -e LEECH_DUMP_CHAT="${{ secrets.LEECH_DUMP_CHAT }}" \
+            -e LINKS_LOG_ID="${{ secrets.LINKS_LOG_ID }}" \
+            -e MIRROR_LOG_ID="${{ secrets.MIRROR_LOG_ID }}" \
+            -e DEFAULT_UPLOAD="${{ secrets.DEFAULT_UPLOAD }}" \
+            -e LEECH_SPLIT_SIZE="${{ secrets.LEECH_SPLIT_SIZE }}" \
+            -e WEB_ACCESS_PASSWORD="${{ secrets.WEB_ACCESS_PASSWORD }}" \
+            -e TIMEZONE="Asia/Kolkata" \
+            -p 8080:8080 \
+            mysterysd/wzmlx:v3
+
+          echo "Waiting 45 seconds for bot startup..."
+          sleep 45
+          echo "=== DOCKER LOGS (last 30 lines) ==="
+          docker logs wzml_bot 2>&1 | tail -30
+
+      - name: Start tunnel + broadcasts + keep-alive
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
+          RUN_HOURS: ${{ github.event.inputs.hours || '5' }}
+        shell: bash {0}
+        run: |
+          HOURS=$(echo "${RUN_HOURS}" | bc -l 2>/dev/null || echo "5")
+          TOTAL_SEC=$(echo "$HOURS * 3600" | bc -l 2>/dev/null || echo "18000")
+          TOTAL_SEC=$(printf "%.0f" "$TOTAL_SEC")
+
+          echo "Bot will run for $((TOTAL_SEC / 3600))h $(((TOTAL_SEC % 3600) / 60))m"
+
+          # --- Start Cloudflare tunnel ---
+          /tmp/cloudflared tunnel --url http://localhost:8080 > /tmp/cloudflared.log 2>&1 &
+
+          TUNNEL_URL=""
+          for i in $(seq 1 30); do
+            sleep 2
+            TUNNEL_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
+            if [ -n "$TUNNEL_URL" ]; then
+              break
+            fi
+          done
+
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "WARNING: No tunnel URL obtained"
+          else
+            echo "Tunnel URL: $TUNNEL_URL"
+          fi
+
+          # --- Background: startup broadcast at +5 min ---
+          (
+            sleep 300
+            if [ -n "$TUNNEL_URL" ]; then
+              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nWeb UI: %s\n\nSend /help to see available commands.\nBot will run for ~5 hours, then auto-restart after 30 min rest.' "$TUNNEL_URL")
+            else
+              MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nSend /help to see available commands.\nBot will run for ~5 hours, then auto-restart after 30 min rest.')
+            fi
+
+            echo "[$(date +%H:%M:%S)] Sending startup broadcast to all users..."
+            python3 broadcast.py "$MSG" || echo "Broadcast failed (non-fatal)"
+
+            curl -s -X POST \
+                 -H "Title: WZML-X Bot is LIVE!" \
+                 -H "Priority: 4" \
+                 -H "Tags: tada,rocket,gear" \
+                 -H "Click: ${TUNNEL_URL}" \
+                 -d "Bot is live! Web URL: ${TUNNEL_URL:-N/A}" \
+                 "https://ntfy.sh/${NTFY_TOPIC}" || true
+          ) &
+
+          # --- Background: pre-shutdown broadcast at -10 min ---
+          PRE_SHUTDOWN_WAIT=$((TOTAL_SEC - 600))
+          (
+            sleep $PRE_SHUTDOWN_WAIT
+            MSG=$(printf 'WZML-X Bot Restarting Soon!\n\nThe bot will go down in 10 minutes for a scheduled restart.\nAll active downloads will be paused and resume automatically after restart.\n\nDowntime: ~30 minutes\nThe bot will come back online automatically.\n\nThank you for your patience!')
+
+            echo "[$(date +%H:%M:%S)] Sending pre-shutdown broadcast to all users..."
+            python3 broadcast.py "$MSG" || echo "Broadcast failed (non-fatal)"
+
+            curl -s -X POST \
+                 -H "Title: Bot Restarting in 10 min" \
+                 -H "Priority: 4" \
+                 -H "Tags: warning,clock,refresh" \
+                 -d "Bot going down in 10 min for scheduled restart. Back in ~30 min." \
+                 "https://ntfy.sh/${NTFY_TOPIC}" || true
+          ) &
+
+          # --- Main keep-alive loop ---
+          ELAPSED=0
+          INTERVAL=120
+          PING_COUNT=0
+
+          while [ $ELAPSED -lt $TOTAL_SEC ]; do
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+            PING_COUNT=$((PING_COUNT + 1))
+
+            BOT_UP="UP"
+            CF_UP="UP"
+            docker inspect -f '{{.State.Running}}' wzml_bot 2>/dev/null | grep -q true || BOT_UP="DOWN"
+            ps aux | grep cloudflared | grep -v grep >/dev/null 2>&1 || CF_UP="DOWN"
+
+            REMAINING=$((TOTAL_SEC - ELAPSED))
+            echo "[$(date +%H:%M:%S)] Check #${PING_COUNT} | Bot: ${BOT_UP} | Tunnel: ${CF_UP} | ${REMAINING}s left"
+
+            if [ "$BOT_UP" = "DOWN" ]; then
+              echo "  [!] Bot container is DOWN!"
+              echo "  Last 20 log lines:"
+              docker logs wzml_bot 2>&1 | tail -20
+
+              if [ $PING_COUNT -le 3 ]; then
+                echo "  Attempting restart..."
+                docker start wzml_bot 2>/dev/null || true
+                sleep 10
+                docker inspect -f '{{.State.Running}}' wzml_bot 2>/dev/null | grep -q true && echo "  [+] Bot restarted!" || echo "  [!] Bot restart failed"
+              else
+                echo "  Bot has been down for multiple checks. Sending alert..."
+                curl -s -X POST -H "Title: Bot CRASHED!" -H "Priority: 5" -H "Tags: x,warning" \
+                     -d "Bot container is DOWN! Check GitHub Actions logs. Check #${PING_COUNT}" \
+                     "https://ntfy.sh/${NTFY_TOPIC}" || true
+                break
+              fi
+            fi
+
+            if [ "$CF_UP" = "DOWN" ]; then
+              echo "  [!] Tunnel down. Restarting cloudflared..."
+              pkill -f cloudflared 2>/dev/null
+              sleep 2
+              /tmp/cloudflared tunnel --url http://localhost:8080 > /tmp/cloudflared.log 2>&1 &
+              sleep 10
+              NEW_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1)
+              if [ -n "$NEW_URL" ]; then
+                TUNNEL_URL="$NEW_URL"
+                echo "  [+] Tunnel restarted! New URL: $TUNNEL_URL"
+                curl -s -X POST -H "Title: Tunnel Restarted" -H "Priority: 4" -H "Tags: warning,refresh" \
+                     -H "Click: ${TUNNEL_URL}" \
+                     -d "Web tunnel restarted. New URL: ${TUNNEL_URL}" \
+                     "https://ntfy.sh/${NTFY_TOPIC}" || true
+              else
+                echo "  [!] Tunnel restart failed"
+              fi
+            fi
+          done
+
+          echo "Bot run time complete."
+
+      - name: Stop bot container
+        if: always()
+        run: |
+          echo "=== FINAL DOCKER LOGS ==="
+          docker logs wzml_bot 2>&1 | tail -50 || true
+          docker stop wzml_bot 2>/dev/null || true
+          docker rm wzml_bot 2>/dev/null || true
+
+      - name: Rest period + auto-restart
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          AUTO_RESTART: ${{ github.event.inputs.auto_restart || 'true' }}
+          REST_MINUTES: ${{ github.event.inputs.rest_minutes || '30' }}
+          GITHUB_REPO: ${{ github.repository }}
+        shell: bash {0}
+        run: |
+          AUTO_RESTART=$(echo "$AUTO_RESTART" | tr '[:upper:]' '[:lower:]')
+
+          if [ "$AUTO_RESTART" != "true" ]; then
+            echo "Auto-restart disabled."
+            curl -s -X POST -H "Title: Bot Stopped" -H "Priority: 3" -H "Tags: wave" \
+                 -d "Bot stopped. Auto-restart was disabled." "https://ntfy.sh/${NTFY_TOPIC}"
+            exit 0
+          fi
+
+          if [ -z "$PAT_TOKEN" ]; then
+            echo "ERROR: PAT_TOKEN secret is not set!"
+            curl -s -X POST -H "Title: Auto-restart Failed" -H "Priority: 5" -H "Tags: x,warning" \
+                 -d "Cannot auto-restart: PAT_TOKEN secret is not set. Add it in repo Settings -> Secrets -> Actions." \
+                 "https://ntfy.sh/${NTFY_TOPIC}"
+            exit 1
+          fi
+
+          REST_SEC=$((REST_MINUTES * 60))
+          echo "Rest period: ${REST_MINUTES} minutes, then auto-trigger next run"
+
+          curl -s -X POST -H "Title: Rest Period Started" -H "Priority: 3" -H "Tags: coffee,sleep" \
+               -d "Bot session ended. Resting ${REST_MINUTES} min. New session starts automatically." \
+               "https://ntfy.sh/${NTFY_TOPIC}"
+
+          sleep $REST_SEC
+
+          echo "Triggering new workflow run..."
+          API_URL="https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/wzml-bot.yml/dispatches"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+               -H "Accept: application/vnd.github+json" \
+               -H "Authorization: Bearer ${PAT_TOKEN}" \
+               -H "X-GitHub-Api-Version: 2022-11-28" \
+               -d '{"ref":"refs/heads/main","inputs":{"hours":"5","rest_minutes":"30","auto_restart":"true"}}' \
+               "$API_URL")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          echo "API response: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "SUCCESS: New workflow run triggered!"
+            curl -s -X POST -H "Title: New Bot Starting" -H "Priority: 4" -H "Tags: rocket,refresh" \
+                 -d "New bot workflow triggered! Setup takes ~5 min. Broadcast coming soon." \
+                 "https://ntfy.sh/${NTFY_TOPIC}"
+          else
+            echo "Failed with HTTP $HTTP_CODE. Trying wzv3 branch..."
+            RESPONSE2=$(curl -s -w "\n%{http_code}" -X POST \
+                 -H "Accept: application/vnd.github+json" \
+                 -H "Authorization: Bearer ${PAT_TOKEN}" \
+                 -H "X-GitHub-Api-Version: 2022-11-28" \
+                 -d '{"ref":"refs/heads/wzv3","inputs":{"hours":"5","rest_minutes":"30","auto_restart":"true"}}' \
+                 "$API_URL")
+            HTTP_CODE2=$(echo "$RESPONSE2" | tail -1)
+            if [ "$HTTP_CODE2" = "204" ]; then
+              echo "SUCCESS with wzv3 branch!"
+              curl -s -X POST -H "Title: New Bot Starting" -H "Priority: 4" -H "Tags: rocket,refresh" \
+                   -d "New bot workflow triggered!" "https://ntfy.sh/${NTFY_TOPIC}"
+            else
+              curl -s -X POST -H "Title: Auto-restart Failed" -H "Priority: 5" -H "Tags: x,warning" \
+                   -d "Failed to trigger new run. HTTP $HTTP_CODE. Manually run from GitHub Actions tab." \
+                   "https://ntfy.sh/${NTFY_TOPIC}"
+              exit 1
+            fi
+          fi
