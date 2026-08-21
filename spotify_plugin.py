@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 SpotDL Plugin for WZML-X
 Adds /spotify command to download music from Spotify URLs.
@@ -98,6 +100,8 @@ class SpotifyPlugin(PluginBase):
     async def on_load(self) -> bool:
         from bot import LOGGER
 
+        # Always return True so the command registers even if spotdl
+        # has a transient issue — we check again at download time.
         try:
             proc = await asyncio.create_subprocess_exec(
                 "spotdl", "--version",
@@ -107,20 +111,11 @@ class SpotifyPlugin(PluginBase):
             await proc.wait()
             if proc.returncode == 0:
                 LOGGER.info("Spotify plugin loaded — spotDL is available")
-                return True
             else:
-                LOGGER.warning("Spotify plugin: spotDL not found, installing...")
-                proc = await asyncio.create_subprocess_exec(
-                    "pip", "install", "spotdl",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await proc.wait()
-                LOGGER.info("spotDL installed successfully")
-                return True
+                LOGGER.warning("Spotify plugin: spotDL not found at load time, will retry on download")
         except Exception as e:
-            LOGGER.error(f"Spotify plugin load error: {e}")
-            return False
+            LOGGER.warning(f"Spotify plugin: spotDL check failed at load time ({e}), will retry on download")
+        return True
 
     async def on_unload(self) -> bool:
         from bot import LOGGER
