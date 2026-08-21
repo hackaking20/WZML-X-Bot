@@ -28,7 +28,7 @@ jobs:
           /tmp/cloudflared --version
           pip install -q pymongo requests
 
-      - name: Clone and build bot image
+      - name      - name: Clone and build bot image
         env:
           UPSTREAM_REPO: ${{ secrets.UPSTREAM_REPO }}
           UPSTREAM_BRANCH: ${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}
@@ -39,6 +39,40 @@ jobs:
 
           echo "Cloning $UP_REPO (branch: $UP_BRANCH)..."
           git clone --depth 1 -b "$UP_BRANCH" "$UP_REPO" /tmp/wzml-src
+
+          # ── PATCH: fix MatchError hanging ──────────────────────
+          YTDLP_FILE=$(find /tmp/wzml-src -name "yt_dlp_download.py" | head -1)
+          if [ -n "$YTDLP_FILE" ]; then
+            echo "Patching $YTDLP_FILE ..."
+            python3 - <<'PYEOF'
+import re
+
+path = "$YTDLP_FILE"
+
+with open(path, "r") as f:
+    content = f.read()
+
+# Add MatchError to imports
+content = content.replace(
+    "from yt_dlp.utils import DownloadError",
+    "from yt_dlp.utils import DownloadError, MatchError"
+)
+
+# Catch MatchError alongside DownloadError
+content = content.replace(
+    "except DownloadError as e:",
+    "except (DownloadError, MatchError) as e:"
+)
+
+with open(path, "w") as f:
+    f.write(content)
+
+print("Patch applied successfully!")
+PYEOF
+          else
+            echo "WARNING: yt_dlp_download.py not found, skipping patch"
+          fi
+          # ── END PATCH ──────────────────────────────────────────
 
           echo "Building Docker image..."
           cd /tmp/wzml-src
