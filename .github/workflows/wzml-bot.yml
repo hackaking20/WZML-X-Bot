@@ -118,6 +118,31 @@ jobs:
           fi
           # ── END PATCH ──────────────────────────────────────────────
 
+          # ── SPOTDL PLUGIN SETUP ────────────────────────────────────
+          # Copy spotify_plugin.py from repo checkout into WZML-X plugins dir
+          if [ -f "spotify_plugin.py" ]; then
+            echo "Copying spotify_plugin.py to WZML-X plugins/"
+            cp spotify_plugin.py /tmp/wzml-src/plugins/spotify_plugin.py
+          else
+            echo "WARNING: spotify_plugin.py not found in repo, skipping spotDL plugin"
+          fi
+
+          # Modify Dockerfile to install spotdl inside the Docker image
+          # The upstream Dockerfile is just "FROM mysterysd/wzmlx:v3"
+          # We append a pip install line for spotdl
+          DOCKERFILE=/tmp/wzml-src/Dockerfile
+          if [ -f "$DOCKERFILE" ]; then
+            if ! grep -q "spotdl" "$DOCKERFILE"; then
+              echo "Adding spotdl install to Dockerfile..."
+              echo 'RUN pip install --no-cache-dir spotdl' >> "$DOCKERFILE"
+              echo "--- Updated Dockerfile ---"
+              cat "$DOCKERFILE"
+            fi
+          else
+            echo "WARNING: Dockerfile not found at $DOCKERFILE"
+          fi
+          # ── END SPOTDL PLUGIN SETUP ────────────────────────────────
+
           echo "Building Docker image..."
           cd /tmp/wzml-src
           docker build -t wzml-bot:latest . 2>&1 | tail -20
