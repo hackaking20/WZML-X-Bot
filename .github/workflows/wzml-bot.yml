@@ -44,8 +44,16 @@ jobs:
           YTDLP_FILE=$(find /tmp/wzml-src -name "yt_dlp_download.py" | head -1)
           if [ -n "$YTDLP_FILE" ]; then
             echo "Patching $YTDLP_FILE ..."
-            sed -i 's/from yt_dlp.utils import DownloadError/from yt_dlp.utils import DownloadError, MatchError/' "$YTDLP_FILE"
+
+            # Fix 1: Import MatchError
+            sed -i 's/from yt_dlp import YoutubeDL, DownloadError/from yt_dlp import YoutubeDL, DownloadError\nfrom yt_dlp.utils import MatchError/' "$YTDLP_FILE"
+
+            # Fix 2: Catch MatchError in _download
             sed -i 's/except DownloadError as e:/except (DownloadError, MatchError) as e:/' "$YTDLP_FILE"
+
+            # Fix 3: Replace suppress(Exception) so completion is not swallowed
+            sed -i 's/with suppress(Exception):/with suppress(ValueError):/' "$YTDLP_FILE"
+
             echo "Patch applied successfully!"
           else
             echo "WARNING: yt_dlp_download.py not found, skipping patch"
