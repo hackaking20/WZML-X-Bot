@@ -53,10 +53,13 @@ jobs:
           # Additionally, socket_timeout is not set in yt-dlp opts, so
           # yt-dlp can block indefinitely on stalled network connections.
           #
-          # This patch fixes three things:
+          # This patch fixes four things:
           #   1. except DownloadError → except Exception (catch ALL failures)
           #   2. suppress(Exception) → suppress() (suppress nothing)
           #   3. Add socket_timeout: 30 to yt-dlp opts
+          #   4. Patch _set_options to convert match_filter strings to callables
+          #      so users can set YT_DLP_OPTIONS=match_filter:duration > 90
+          #      via /bset and control it from the bot at runtime
           # ──────────────────────────────────────────────────────────
 
           YTDLP_FILE=$(find /tmp/wzml-src -name "yt_dlp_download.py" | head -1)
@@ -81,11 +84,35 @@ jobs:
             # 30 seconds is yt-dlp's recommended default.
             sed -i '/"fragment_retries": 10,/a\            "socket_timeout": 30,' "$YTDLP_FILE"
 
+            # Fix 4: Patch _set_options to convert match_filter strings to callables
+            # WZML-X passes YT_DLP_OPTIONS values as strings, but yt-dlp expects
+            # match_filter to be a callable function. This patch adds an elif branch
+            # to _set_options that converts string match_filter values using
+            # match_filter_func(), so users can set it via /bset:
+            #   YT_DLP_OPTIONS=match_filter:duration > 90
+            # and change/remove it anytime without redeploying.
+            sed -i '/^from yt_dlp import YoutubeDL, DownloadError$/a from yt_dlp.utils import match_filter_func' "$YTDLP_FILE"
+
+            python3 -c "
+            with open('$YTDLP_FILE', 'r') as f:
+                content = f.read()
+            old = '            else:\n                self.opts[key] = value'
+            new = '            elif key == \"match_filter\" and isinstance(value, str):\n                self.opts[key] = match_filter_func(value)\n            else:\n                self.opts[key] = value'
+            if old in content:
+                content = content.replace(old, new, 1)
+                with open('$YTDLP_FILE', 'w') as f:
+                    f.write(content)
+                print('Fix 4: _set_options patched for match_filter')
+            else:
+                print('WARNING: Fix 4 pattern not found in _set_options')
+            "
+
             echo "Patch applied successfully!"
             echo "--- Verifying patch ---"
             grep -n "except Exception as e:" "$YTDLP_FILE" || echo "WARNING: Fix 1 not found"
             grep -n "with suppress():" "$YTDLP_FILE" || echo "WARNING: Fix 2 not found"
             grep -n "socket_timeout" "$YTDLP_FILE" || echo "WARNING: Fix 3 not found"
+            grep -n "match_filter_func" "$YTDLP_FILE" || echo "WARNING: Fix 4 not found"
           else
             echo "WARNING: yt_dlp_download.py not found, skipping patch"
           fi
