@@ -93,13 +93,15 @@ class SpotifyPlugin(PluginBase):
         description="Download music from Spotify URLs with metadata",
         enabled=True,
         handlers=[],
-        commands=["spotify"],
+        commands=["spotify", "s"],
         dependencies=["spotdl"],
     )
 
     async def on_load(self) -> bool:
         from bot import LOGGER
+        from bot.core.config_manager import Config
 
+        spotdl_ok = False
         # Always return True so the command registers even if spotdl
         # has a transient issue — we check again at download time.
         try:
@@ -111,10 +113,29 @@ class SpotifyPlugin(PluginBase):
             await proc.wait()
             if proc.returncode == 0:
                 LOGGER.info("Spotify plugin loaded — spotDL is available")
+                spotdl_ok = True
             else:
                 LOGGER.warning("Spotify plugin: spotDL not found at load time, will retry on download")
         except Exception as e:
             LOGGER.warning(f"Spotify plugin: spotDL check failed at load time ({e}), will retry on download")
+
+        # Send startup confirmation to owner
+        try:
+            from bot.core.tg_client import TgClient
+            owner_id = Config.OWNER_ID
+            if owner_id:
+                status_line = "spotDL: ready" if spotdl_ok else "spotDL: installing on first use"
+                msg = (
+                    f"Spotify Plugin Loaded!\n"
+                    f"Commands: /spotify and /s\n"
+                    f"Status: {status_line}\n"
+                    f"Send /spotify or /s with a Spotify URL to download music."
+                )
+                await TgClient.bot.send_message(chat_id=owner_id, text=msg)
+                LOGGER.info("Spotify plugin: startup confirmation sent to owner")
+        except Exception as e:
+            LOGGER.warning(f"Spotify plugin: could not send startup message ({e})")
+
         return True
 
     async def on_unload(self) -> bool:
@@ -697,6 +718,12 @@ def _parse_telegram_dest(up_dest: str, message: Message):
 
 
 @new_task
+async def s_command(client: Client, message: Message):
+    """Short alias for /spotify — same as /s <url>."""
+    await spotify_command(client, message)
+
+
+@new_task
 async def spotify_command(client: Client, message: Message):
     """Download music from Spotify URLs with full WZML-X flag support."""
     from bot import DOWNLOAD_DIR, LOGGER
@@ -854,13 +881,13 @@ async def spotify_command(client: Client, message: Message):
         help_text = (
             "<b>Spotify Downloader</b>\n\n"
             "<b>Usage:</b>\n"
-            "  <code>/spotify {url}</code> - Download to Telegram as audio\n"
-            "  <code>/spotify {url} -z</code> - Zip all files into one archive\n"
-            "  <code>/spotify {url} -up {dest}</code> - Upload to GDrive/rclone/Telegram\n"
-            "  <code>/spotify {url} -n name</code> - Custom name\n"
-            "  <code>/spotify {url} -doc</code> - Send as document\n"
-            "  <code>/spotify {url} -t {img_url}</code> - Custom thumbnail\n"
-            "  <code>/spotify {url} -sp 500mb</code> - Split size\n\n"
+            "  <code>/spotify {url}</code> or <code>/s {url}</code> - Download as audio\n"
+            "  <code>/s {url} -z</code> - Zip all files into one archive\n"
+            "  <code>/s {url} -up {dest}</code> - Upload to GDrive/rclone/Telegram\n"
+            "  <code>/s {url} -n name</code> - Custom name\n"
+            "  <code>/s {url} -doc</code> - Send as document\n"
+            "  <code>/s {url} -t {img_url}</code> - Custom thumbnail\n"
+            "  <code>/s {url} -sp 500mb</code> - Split size\n\n"
             "<b>Supported URLs:</b>\n"
             "  Track: open.spotify.com/track/...\n"
             "  Album: open.spotify.com/album/...\n"
