@@ -143,6 +143,49 @@ jobs:
           fi
           # ── END SPOTDL PLUGIN SETUP ────────────────────────────────
 
+          # ── AUTO-LOAD PLUGINS ON STARTUP ───────────────────────────
+          # WZML-X's plugin system does NOT auto-load plugins.
+          # register_plugin_commands() only registers the /plugins menu.
+          # We patch __main__.py to auto-load all discovered plugins
+          # right after register_plugin_commands() is called.
+          MAINFILE=/tmp/wzml-src/bot/__main__.py
+          if [ -f "$MAINFILE" ]; then
+            if ! grep -q "Auto-load all discovered plugins" "$MAINFILE"; then
+              echo "Patching __main__.py to auto-load plugins..."
+              printf '%s\n' \
+                'import sys' \
+                'mf = sys.argv[1]' \
+                'with open(mf, "r") as f:' \
+                '    c = f.read()' \
+                'old = "register_plugin_commands()"' \
+                'if old in c and "Auto-load" not in c:' \
+                '    inject = old + "\n"' \
+                '    inject += "\n"' \
+                '    inject += "# Auto-load all discovered plugins on startup\n"' \
+                '    inject += "_discovered = plugin_manager.discover_plugins()\n"' \
+                '    inject += "for _pname in _discovered:\n"' \
+                '    inject += "    try:\n"' \
+                '    inject += "        bot_loop.run_until_complete(plugin_manager.load_plugin(_pname))\n"' \
+                '    inject += "    except Exception as _e:\n"' \
+                '    inject += "        LOGGER.warning(\"Failed to auto-load plugin \" + str(_pname) + \": \" + str(_e))\n"' \
+                '    c = c.replace(old, inject, 1)' \
+                '    with open(mf, "w") as f:' \
+                '        f.write(c)' \
+                '    print("__main__.py patched: plugins will auto-load on startup")' \
+                'else:' \
+                '    print("WARNING: pattern not found or already patched")' \
+                > /tmp/patch_autoload.py
+              python3 /tmp/patch_autoload.py "$MAINFILE"
+              echo "Verifying patch..."
+              grep -n "Auto-load" "$MAINFILE" || echo "WARNING: patch not found"
+            else
+              echo "__main__.py already patched for auto-load"
+            fi
+          else
+            echo "WARNING: __main__.py not found, cannot patch auto-load"
+          fi
+          # ── END AUTO-LOAD PLUGINS ──────────────────────────────────
+
           echo "Building Docker image..."
           cd /tmp/wzml-src
           docker build -t wzml-bot:latest . 2>&1 | tail -20
