@@ -28,7 +28,7 @@ jobs:
           /tmp/cloudflared --version
           pip install -q pymongo requests
 
-      - name      - name: Clone and build bot image
+      - name: Clone and build bot image
         env:
           UPSTREAM_REPO: ${{ secrets.UPSTREAM_REPO }}
           UPSTREAM_BRANCH: ${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}
@@ -44,10 +44,10 @@ jobs:
           YTDLP_FILE=$(find /tmp/wzml-src -name "yt_dlp_download.py" | head -1)
           if [ -n "$YTDLP_FILE" ]; then
             echo "Patching $YTDLP_FILE ..."
-            python3 - <<'PYEOF'
-import re
+            python3 - "$YTDLP_FILE" <<'PYEOF'
+import sys
 
-path = "$YTDLP_FILE"
+path = sys.argv[1]
 
 with open(path, "r") as f:
     content = f.read()
@@ -220,7 +220,6 @@ PYEOF
           # --- Background: startup broadcast at +5 min ---
           (
             sleep 300
-            # Owner gets the URL; regular users get a plain message without the URL
             REGULAR_MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.')
             if [ -n "$TUNNEL_URL" ]; then
               OWNER_MSG=$(printf 'WZML-X Bot is LIVE!\n\nThe bot is now online and ready to use.\nWeb UI: %s\n\nSend /help to see available commands.\nBot will run for ~5 hours, then restart after a 30 min break.' "$TUNNEL_URL")
@@ -244,7 +243,6 @@ PYEOF
           PRE_SHUTDOWN_WAIT=$((TOTAL_SEC - 600))
           (
             sleep $PRE_SHUTDOWN_WAIT
-            # Same message for owner and regular users on shutdown (no URL needed)
             MSG=$(printf 'WZML-X Bot Restarting Soon!\n\nThe bot will go down in 10 minutes for a scheduled restart.\nAll active downloads will be paused and resume automatically after restart.\n\nDowntime: ~30 minutes\nThe bot will come back online automatically via the scheduled timer.\n\nThank you for your patience!')
 
             echo "[$(date +%H:%M:%S)] Sending pre-shutdown broadcast to all users..."
