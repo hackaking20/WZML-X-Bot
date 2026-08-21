@@ -127,14 +127,14 @@ jobs:
             echo "WARNING: spotify_plugin.py not found in repo, skipping spotDL plugin"
           fi
 
-          # Modify Dockerfile to install spotdl inside the Docker image
-          # The upstream Dockerfile is just "FROM mysterysd/wzmlx:v3"
-          # We append a pip install line for spotdl
+          # Modify Dockerfile to install spotdl inside the correct venv.
+          # The upstream Dockerfile uses: uv pip install --python /wzvenv/bin/python
+          # So we must install spotdl into /wzvenv, not system pip.
           DOCKERFILE=/tmp/wzml-src/Dockerfile
           if [ -f "$DOCKERFILE" ]; then
             if ! grep -q "spotdl" "$DOCKERFILE"; then
-              echo "Adding spotdl install to Dockerfile..."
-              echo 'RUN pip install --no-cache-dir spotdl' >> "$DOCKERFILE"
+              echo "Adding spotdl install to Dockerfile (into /wzvenv)..."
+              sed -i '/^COPY . .$/i RUN uv pip install --python /wzvenv/bin/python --no-cache-dir spotdl' "$DOCKERFILE"
               echo "--- Updated Dockerfile ---"
               cat "$DOCKERFILE"
             fi
