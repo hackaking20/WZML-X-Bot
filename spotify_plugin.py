@@ -119,6 +119,23 @@ class SpotifyPlugin(PluginBase):
         from bot import LOGGER
         from bot.core.config_manager import Config
 
+        # Update yt-dlp on startup to fix AudioProviderError
+        try:
+            LOGGER.info("Spotify plugin: updating yt-dlp...")
+            proc = await asyncio.create_subprocess_exec(
+                "spotdl", "--update",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_b, stderr_b = await proc.communicate()
+            update_out = stdout_b.decode("utf-8", errors="replace").strip()
+            if "already" in update_out.lower() or proc.returncode == 0:
+                LOGGER.info(f"Spotify plugin: yt-dlp update check done: {update_out[-200:]}")
+            else:
+                LOGGER.warning(f"Spotify plugin: yt-dlp update had issues: {update_out[-200:]}")
+        except Exception as e:
+            LOGGER.warning(f"Spotify plugin: could not update yt-dlp ({e})")
+
         spotdl_ok = False
         # Always return True so the command registers even if spotdl
         # has a transient issue — we check again at download time.
@@ -210,6 +227,8 @@ async def _run_spotdl(query: str, download_path: Path, LOGGER) -> tuple:
         "spotdl", "download", query,
         "--output", str(download_path / "{artists} - {title}.{output-ext}"),
         "--format", "mp3",
+        "--yt-dlp-args", "--no-playlist --extractor-args youtube:player_client=android,web --retries 5 --fragment-retries 5 --socket-timeout 30",
+        "--preload-providers",
     ]
 
     LOGGER.info(f"Music download started: {query} -> {download_path}")
@@ -226,23 +245,86 @@ async def _run_spotdl(query: str, download_path: Path, LOGGER) -> tuple:
     stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
     stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
 
-    LOGGER.info(f"spotDL stdout (last 500 chars): {stdout_text[-500:]}")
+    LOGGER.info(f"spotDL stdout (last 800 chars): {stdout_text[-800:]}")
     if stderr_text:
-        LOGGER.info(f"spotDL stderr (last 500 chars): {stderr_text[-500:]}")
+        LOGGER.info(f"spotDL stderr (last 800 chars): {stderr_text[-800:]}")
+
+    # Find downloaded files (check even if returncode != 0, since spotDL may
+    # partially download some tracks before failing on others)
+    downloaded_files = sorted(download_path.glob("*.mp3"))
+    if not downloaded_files:
+        downloaded_files = sorted(download_path.glob("*"))
+        # Filter out non-files
+        downloaded_files = [f for f in downloaded_files if f.is_file()]
 
     if proc.returncode != 0:
-        # spotDL often prints errors to stdout, so check both
-        error_text = stderr_text[-500:] if stderr_text else stdout_text[-500:]
+        # If we got some files despite the error, treat it as partial success
+        if downloaded_files:
+            LOGGER.info(f"spotDL had errors but {len(downloaded_files)} files were downloaded")
+            # Extract a clean error summary for the remaining failures
+            error_summary = _extract_error_summary(stdout_text, stderr_text)
+            return (True, downloaded_files, error_summary)
+
+        # No files downloaded at all — real failure
+        error_text = _extract_error_summary(stdout_text, stderr_text)
         if not error_text:
             error_text = f"spotDL exited with code {proc.returncode} (no error output)"
         return (False, [], error_text)
 
-    # Find downloaded files
-    downloaded_files = sorted(download_path.glob("*.mp3"))
     if not downloaded_files:
-        downloaded_files = sorted(download_path.glob("*"))
+        # spotDL returned success but no files found
+        error_text = _extract_error_summary(stdout_text, stderr_text)
+        if not error_text:
+            error_text = "spotDL completed but no files were downloaded. The URL may be invalid or the track may not be available on YouTube Music."
+        return (False, [], error_text)
 
     return (True, downloaded_files, "")
+
+
+def _extract_error_summary(stdout_text: str, stderr_text: str) -> str:
+    """Extract a clean, user-friendly error summary from spotDL output."""
+    combined = (stdout_text + "\n" + stderr_text).strip()
+    if not combined:
+        return ""
+
+    # Collect all AudioProviderError and other error lines
+    error_lines = []
+    for line in combined.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+        # Skip progress/informatory lines
+        if any(skip in lower for skip in [
+            "downloading", "conversion", "processing",
+            "fetching", "searching", "|", "─", "done",
+        ]):
+            continue
+        if any(kw in lower for kw in [
+            "error", "failed", "exception", "traceback",
+            "not found", "unavailable", "copyright", "unavailable",
+            "no usable", "yt-dlp", "audio provider",
+        ]):
+            if line not in error_lines:
+                error_lines.append(line)
+
+    if not error_lines:
+        # No clear error lines found, return last few non-empty lines
+        last_lines = [l.strip() for l in combined.split("\n") if l.strip()]
+        if last_lines:
+            return "\n".join(last_lines[-5:])
+        return ""
+
+    # Deduplicate and limit
+    unique_errors = []
+    seen = set()
+    for line in error_lines:
+        key = line[:100].lower()
+        if key not in seen:
+            seen.add(key)
+            unique_errors.append(line)
+
+    return "\n".join(unique_errors[:10])
 
 
 async def _download_thumbnail(thumb_input: str) -> str | None:
@@ -493,7 +575,7 @@ async def _process_single_url(
     LOGGER,
     download_base: Path,
 ):
-    """Process a single URL: download + upload."""
+    """Process a single Spotify URL: download + upload."""
     from bot import DOWNLOAD_DIR
 
     download_path = download_base / f"spotify_{task_id}"
@@ -503,7 +585,8 @@ async def _process_single_url(
         status_msg,
         f"🎵 <b>Music Download Started</b>\n\n"
         f"Query: {query}\n"
-        f"Status: Fetching metadata...",
+        f"Status: Downloading from YouTube Music...\n"
+        f"⏳ This may take a minute or two...",
     )
 
     # Run spotDL
@@ -513,8 +596,8 @@ async def _process_single_url(
         await edit_message(
             status_msg,
             f"❌ <b>Download Failed</b>\n\n"
-            f"URL: {query}\n"
-            f"Error: <code>{error}</code>",
+            f"URL: {query}\n\n"
+            f"<b>Reason:</b>\n<code>{error[:800]}</code>",
         )
         shutil.rmtree(download_path, ignore_errors=True)
         return False
@@ -523,8 +606,8 @@ async def _process_single_url(
         await edit_message(
             status_msg,
             f"❌ <b>No files downloaded</b>\n\n"
-            f"URL: {query}\n"
-            f"spotDL completed but no files found.",
+            f"URL: {query}\n\n"
+            f"<b>Reason:</b>\n<code>{error[:800] if error else 'spotDL completed but no files were found. The track may not be available on YouTube Music.'}</code>",
         )
         shutil.rmtree(download_path, ignore_errors=True)
         return False
@@ -576,7 +659,8 @@ async def _process_single_url(
         f"✅ <b>Download Complete</b>\n\n"
         f"URL: {query}\n"
         f"Files: {len(downloaded_files)}\n"
-        f"Status: {'Zipping files...' if is_zip and len(downloaded_files) > 1 else 'Uploading...'}",
+        + (f"⚠️ Some tracks failed: <code>{error[:300]}</code>\n" if error else "")
+        + f"Status: {'Zipping files...' if is_zip and len(downloaded_files) > 1 else 'Uploading...'}",
     )
 
     # ── ZIP MODE ──
@@ -694,7 +778,7 @@ async def _process_single_url(
 
 
 def _derive_name(query: str) -> str:
-    """Derive a clean name from the URL type."""
+    """Derive a clean name from the Spotify URL type."""
     if "/track/" in query:
         return "spotify_track"
     elif "/album/" in query:
@@ -746,7 +830,7 @@ async def s_command(client: Client, message: Message):
 
 @new_task
 async def spotify_command(client: Client, message: Message):
-    """Download music from any supported URL with full WZML-X flag support."""
+    """Download music from Spotify URLs with full WZML-X flag support."""
     from bot import DOWNLOAD_DIR, LOGGER
 
     text = message.text.split("\n")
@@ -763,7 +847,7 @@ async def spotify_command(client: Client, message: Message):
             await send_message(
                 message,
                 "❌ <b>Bulk mode requires replying to a text message or file</b>\n\n"
-                "Reply to a message containing multiple music URLs (one per line)\n"
+                "Reply to a message containing multiple Spotify URLs (one per line)\n"
                 "and use: <code>/spotify -b</code>",
             )
             return
@@ -832,7 +916,7 @@ async def spotify_command(client: Client, message: Message):
             await send_message(
                 message,
                 "❌ <b>Multi mode requires replying to messages</b>\n\n"
-                "Reply to the first message containing a music URL\n"
+                "Reply to the first message containing a Spotify URL\n"
                 "and use: <code>/spotify -i 5</code>",
             )
             return
@@ -964,7 +1048,3 @@ async def spotify_command(client: Client, message: Message):
             f"❌ <b>Error</b>\n\n<code>{str(e)[:500]}</code>",
         )
         shutil.rmtree(download_base, ignore_errors=True)
-
-
-# Plugin instance (required for the plugin system)
-plugin_instance = SpotifyPlugin()
