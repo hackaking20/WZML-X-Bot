@@ -202,18 +202,21 @@ async def _run_spotdl(query: str, download_path: Path, LOGGER) -> tuple:
         stderr=asyncio.subprocess.PIPE,
     )
 
-    # Track progress by reading stdout
-    while True:
-        line = await proc.stdout.readline()
-        if not line:
-            break
-        # Lines are logged but we don't update status here (caller does)
+    # Use communicate() to read both stdout and stderr without deadlocking
+    stdout_bytes, stderr_bytes = await proc.communicate()
 
-    await proc.wait()
+    stdout_text = stdout_bytes.decode("utf-8", errors="replace").strip()
+    stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+
+    LOGGER.info(f"spotDL stdout (last 500 chars): {stdout_text[-500:]}")
+    if stderr_text:
+        LOGGER.info(f"spotDL stderr (last 500 chars): {stderr_text[-500:]}")
 
     if proc.returncode != 0:
-        stderr = await proc.stderr.read()
-        error_text = stderr.decode("utf-8", errors="replace").strip()[-500:]
+        # spotDL often prints errors to stdout, so check both
+        error_text = stderr_text[-500:] if stderr_text else stdout_text[-500:]
+        if not error_text:
+            error_text = f"spotDL exited with code {proc.returncode} (no error output)"
         return (False, [], error_text)
 
     # Find downloaded files
