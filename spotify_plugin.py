@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 """
-SpotDL Plugin for WZML-X
-Adds /spotify command to download music from Spotify URLs.
-Uses spotDL under the hood (which uses yt-dlp for actual downloads).
-Applies Spotify metadata: album art, ID3 tags, lyrics.
+Music Downloader Plugin for WZML-X
+Adds /spotify (alias /s) command to download music from any supported URL.
+Uses spotDL under the hood, which supports:
+  - Spotify tracks, albums, playlists, artists (metadata + audio search)
+  - YouTube / YouTube Music URLs (direct audio)
+  - SoundCloud URLs
+  - Bandcamp URLs
+  - Text search queries (e.g. "artist: name track: title")
+
+spotDL downloads audio from YouTube Music by default and applies
+Spotify metadata (album art, ID3 tags, lyrics) when a Spotify URL is given.
 
 Uses WZML-X's own arg_parser so all standard bot flags work natively:
   -z        Zip all files into one archive
@@ -14,14 +21,14 @@ Uses WZML-X's own arg_parser so all standard bot flags work natively:
   -doc      Send as document instead of audio
   -med      Send as media (audio) — default behavior
   -sp       Split size for large uploads (e.g. 500mb, 2gb)
-  -b        Bulk: reply to a text message/file with multiple Spotify URLs
+  -b        Bulk: reply to a text message/file with multiple URLs
   -i        Multi: reply to first of multiple messages containing URLs
   -m        Move all files into one named folder
   -hl       Hybrid leech (bot + user session based on size)
   -bt       Leech by bot session
   -ut       Leech by user session
-  -e        Extract (ignored for Spotify, files are already MP3)
-  -j        Join (ignored for Spotify)
+  -e        Extract (ignored, files are already MP3)
+  -j        Join (ignored)
 
 Usage:
   /spotify <url>                         Download to Telegram as audio
@@ -31,6 +38,7 @@ Usage:
   /spotify <url> -doc                    Send as document instead of audio
   /spotify <url> -t <image_url>          Custom thumbnail
   /spotify <url> -sp 500mb              Split at 500MB
+  /spotify artist: Coldplay album: Parachutes   Search and download
   Reply to text file: /spotify -b        Bulk download from file
   Reply to messages: /spotify -i 5       Multi download from 5 messages
 """
@@ -55,34 +63,44 @@ from bot.helper.telegram_helper.message_utils import (
     delete_message,
 )
 
-# Spotify URL patterns
-SPOTIFY_PATTERNS = [
-    re.compile(r"https?://open\.spotify\.com/track/[a-zA-Z0-9]+"),
-    re.compile(r"https?://open\.spotify\.com/album/[a-zA-Z0-9]+"),
-    re.compile(r"https?://open\.spotify\.com/playlist/[a-zA-Z0-9]+"),
-    re.compile(r"https?://open\.spotify\.com/artist/[a-zA-Z0-9]+"),
+# Supported URL/query patterns — spotDL handles Spotify, YouTube, SoundCloud, Bandcamp
+# and text search queries. We accept anything and let spotDL decide.
+SUPPORTED_PATTERNS = [
+    re.compile(r"https?://open\.spotify\.com/(track|album|playlist|artist)/[a-zA-Z0-9]+"),
+    re.compile(r"https?://(?:www\.)?youtube\.com/watch\?v=[a-zA-Z0-9_-]+"),
+    re.compile(r"https?://youtu\.be/[a-zA-Z0-9_-]+"),
+    re.compile(r"https?://music\.youtube\.com/watch\?v=[a-zA-Z0-9_-]+"),
+    re.compile(r"https?://(?:www\.)?soundcloud\.com/[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+"),
+    re.compile(r"https?://[a-zA-Z0-9_-]+\.bandcamp\.com/track/[a-zA-Z0-9_-]+"),
+    re.compile(r"https?://[a-zA-Z0-9_-]+\.bandcamp\.com/album/[a-zA-Z0-9_-]+"),
+    # Text search queries like: artist: Coldplay track: Yellow
+    re.compile(r"^(artist|album|track|playlist):.+", re.IGNORECASE),
 ]
 
 
-def is_spotify_url(text: str) -> bool:
-    """Check if text contains a valid Spotify URL."""
-    return any(p.search(text) for p in SPOTIFY_PATTERNS)
+def is_supported_query(text: str) -> bool:
+    """Check if text looks like something spotDL can handle."""
+    text = text.strip()
+    if not text:
+        return False
+    # Any URL or search query — let spotDL decide
+    return any(p.search(text) for p in SUPPORTED_PATTERNS) or text.startswith("http")
 
 
-def extract_spotify_urls(text: str) -> list:
-    """Extract all Spotify URLs from a block of text."""
-    urls = []
-    for pattern in SPOTIFY_PATTERNS:
-        urls.extend(pattern.findall(text))
-    # Also extract full URLs (not just matched portion)
-    all_urls = []
+def extract_queries(text: str) -> list:
+    """Extract all supported URLs/queries from a block of text."""
+    all_queries = []
     for line in text.strip().split("\n"):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if is_spotify_url(line):
-            all_urls.append(line.split()[0])  # first token is the URL
-    return all_urls if all_urls else urls
+        # Accept any URL or search query line
+        if line.startswith("http") or is_supported_query(line):
+            all_queries.append(line.split()[0])  # first token is the URL/query
+        else:
+            # Might be a text search query (e.g. "artist: Coldplay album: Parachutes")
+            all_queries.append(line)
+    return all_queries
 
 
 class SpotifyPlugin(PluginBase):
@@ -90,7 +108,7 @@ class SpotifyPlugin(PluginBase):
         name="spotify_plugin",
         version="2.0.0",
         author="custom",
-        description="Download music from Spotify URLs with metadata",
+        description="Download music from Spotify, YouTube, SoundCloud, Bandcamp + search queries",
         enabled=True,
         handlers=[],
         commands=["spotify", "s"],
@@ -194,7 +212,7 @@ async def _run_spotdl(query: str, download_path: Path, LOGGER) -> tuple:
         "--format", "mp3",
     ]
 
-    LOGGER.info(f"Spotify download started: {query} -> {download_path}")
+    LOGGER.info(f"Music download started: {query} -> {download_path}")
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -475,7 +493,7 @@ async def _process_single_url(
     LOGGER,
     download_base: Path,
 ):
-    """Process a single Spotify URL: download + upload."""
+    """Process a single URL: download + upload."""
     from bot import DOWNLOAD_DIR
 
     download_path = download_base / f"spotify_{task_id}"
@@ -483,8 +501,8 @@ async def _process_single_url(
 
     await edit_message(
         status_msg,
-        f"🎵 <b>Spotify Download Started</b>\n\n"
-        f"URL: {query}\n"
+        f"🎵 <b>Music Download Started</b>\n\n"
+        f"Query: {query}\n"
         f"Status: Fetching metadata...",
     )
 
@@ -676,7 +694,7 @@ async def _process_single_url(
 
 
 def _derive_name(query: str) -> str:
-    """Derive a clean name from the Spotify URL type."""
+    """Derive a clean name from the URL type."""
     if "/track/" in query:
         return "spotify_track"
     elif "/album/" in query:
@@ -728,7 +746,7 @@ async def s_command(client: Client, message: Message):
 
 @new_task
 async def spotify_command(client: Client, message: Message):
-    """Download music from Spotify URLs with full WZML-X flag support."""
+    """Download music from any supported URL with full WZML-X flag support."""
     from bot import DOWNLOAD_DIR, LOGGER
 
     text = message.text.split("\n")
@@ -745,7 +763,7 @@ async def spotify_command(client: Client, message: Message):
             await send_message(
                 message,
                 "❌ <b>Bulk mode requires replying to a text message or file</b>\n\n"
-                "Reply to a message containing multiple Spotify URLs (one per line)\n"
+                "Reply to a message containing multiple music URLs (one per line)\n"
                 "and use: <code>/spotify -b</code>",
             )
             return
@@ -758,12 +776,13 @@ async def spotify_command(client: Client, message: Message):
             with open(file_path, "r") as f:
                 bulk_text = f.read()
 
-        urls = extract_spotify_urls(bulk_text)
+        urls = extract_queries(bulk_text)
         if not urls:
             await send_message(
                 message,
-                "❌ <b>No Spotify URLs found</b>\n\n"
-                "The replied message/file must contain Spotify URLs (one per line).",
+                "❌ <b>No supported URLs found</b>\n\n"
+                "The replied message/file must contain music URLs (one per line).\n"
+                "Supported: Spotify, YouTube, SoundCloud, Bandcamp, or search queries.",
             )
             return
 
@@ -813,7 +832,7 @@ async def spotify_command(client: Client, message: Message):
             await send_message(
                 message,
                 "❌ <b>Multi mode requires replying to messages</b>\n\n"
-                "Reply to the first message containing a Spotify URL\n"
+                "Reply to the first message containing a music URL\n"
                 "and use: <code>/spotify -i 5</code>",
             )
             return
@@ -823,7 +842,7 @@ async def spotify_command(client: Client, message: Message):
         for _ in range(multi):
             if current and current.text:
                 url = current.text.split("\n")[0].strip()
-                if is_spotify_url(url):
+                if url:
                     urls.append(url)
             current = await client.get_messages(
                 chat_id=message.chat.id,
@@ -831,7 +850,7 @@ async def spotify_command(client: Client, message: Message):
             ) if current else None
 
         if not urls:
-            await send_message(message, "❌ No Spotify URLs found in replied messages.")
+            await send_message(message, "❌ No URLs found in replied messages.")
             return
 
         status_msg = await send_message(
@@ -882,7 +901,7 @@ async def spotify_command(client: Client, message: Message):
 
     if not query:
         help_text = (
-            "<b>Spotify Downloader</b>\n\n"
+            "<b>Music Downloader</b>\n\n"
             "<b>Usage:</b>\n"
             "  <code>/spotify {url}</code> or <code>/s {url}</code> - Download as audio\n"
             "  <code>/s {url} -z</code> - Zip all files into one archive\n"
@@ -891,11 +910,13 @@ async def spotify_command(client: Client, message: Message):
             "  <code>/s {url} -doc</code> - Send as document\n"
             "  <code>/s {url} -t {img_url}</code> - Custom thumbnail\n"
             "  <code>/s {url} -sp 500mb</code> - Split size\n\n"
-            "<b>Supported URLs:</b>\n"
-            "  Track: open.spotify.com/track/...\n"
-            "  Album: open.spotify.com/album/...\n"
-            "  Playlist: open.spotify.com/playlist/...\n"
-            "  Artist: open.spotify.com/artist/...\n\n"
+            "<b>Supported sources:</b>\n"
+            "  Spotify: open.spotify.com/track|album|playlist|artist/...\n"
+            "  YouTube: youtube.com/watch?v=... or youtu.be/...\n"
+            "  YouTube Music: music.youtube.com/watch?v=...\n"
+            "  SoundCloud: soundcloud.com/artist/track\n"
+            "  Bandcamp: artist.bandcamp.com/track|album/...\n"
+            "  Search: <code>/s artist: Coldplay track: Yellow</code>\n\n"
             "<b>Bulk:</b> Reply to text file with URLs: <code>/spotify -b</code>\n"
             "<b>Multi:</b> Reply to messages: <code>/spotify -i 5</code>\n\n"
             "<b>All standard WZML-X flags supported:</b>\n"
@@ -904,12 +925,13 @@ async def spotify_command(client: Client, message: Message):
         await send_message(message, help_text)
         return
 
-    if not is_spotify_url(query):
+    # Accept any URL or search query — spotDL will handle validation
+    if not query:
         await send_message(
             message,
-            "❌ <b>Invalid Spotify URL</b>\n\n"
-            "Please provide a valid Spotify URL (track, album, playlist, or artist).\n"
-            "Example: <code>/spotify https://open.spotify.com/track/...</code>",
+            "❌ <b>No URL or query provided</b>\n\n"
+            "Send a Spotify, YouTube, SoundCloud, or Bandcamp URL.\n"
+            "Or search: <code>/s artist: Coldplay track: Yellow</code>",
         )
         return
 
@@ -918,8 +940,8 @@ async def spotify_command(client: Client, message: Message):
 
     status_msg = await send_message(
         message,
-        f"🎵 <b>Spotify Download Started</b>\n\n"
-        f"URL: {query}\n"
+        f"🎵 <b>Music Download Started</b>\n\n"
+        f"Query: {query}\n"
         f"Status: Initializing...",
     )
 
@@ -942,3 +964,7 @@ async def spotify_command(client: Client, message: Message):
             f"❌ <b>Error</b>\n\n<code>{str(e)[:500]}</code>",
         )
         shutil.rmtree(download_base, ignore_errors=True)
+
+
+# Plugin instance (required for the plugin system)
+plugin_instance = SpotifyPlugin()
