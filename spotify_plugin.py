@@ -123,16 +123,26 @@ class SpotifyPlugin(PluginBase):
         try:
             LOGGER.info("Spotify plugin: updating yt-dlp...")
             proc = await asyncio.create_subprocess_exec(
-                "spotdl", "--update",
+                "pip", "install", "--upgrade", "yt-dlp",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout_b, stderr_b = await proc.communicate()
             update_out = stdout_b.decode("utf-8", errors="replace").strip()
-            if "already" in update_out.lower() or proc.returncode == 0:
-                LOGGER.info(f"Spotify plugin: yt-dlp update check done: {update_out[-200:]}")
+            if proc.returncode == 0:
+                LOGGER.info(f"Spotify plugin: yt-dlp upgraded: {update_out[-200:]}")
             else:
-                LOGGER.warning(f"Spotify plugin: yt-dlp update had issues: {update_out[-200:]}")
+                # Try uv pip as fallback (WZML-X uses uv in /wzvenv)
+                proc2 = await asyncio.create_subprocess_exec(
+                    "uv", "pip", "install", "--python", "/wzvenv/bin/python", "--upgrade", "yt-dlp",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                out2, _ = await proc2.communicate()
+                if proc2.returncode == 0:
+                    LOGGER.info("Spotify plugin: yt-dlp upgraded via uv")
+                else:
+                    LOGGER.warning(f"Spotify plugin: yt-dlp upgrade failed: {out2.decode('utf-8', errors='replace').strip()[-200:]}")
         except Exception as e:
             LOGGER.warning(f"Spotify plugin: could not update yt-dlp ({e})")
 
