@@ -109,18 +109,18 @@ jobs:
               sed -i '/^from yt_dlp import YoutubeDL, DownloadError$/a from yt_dlp.utils import match_filter_func' "$YTDLP_FILE"
 
               python3 -c "
-              with open('$YTDLP_FILE', 'r') as f:
-                  content = f.read()
-              old = '            else:\\n                self.opts[key] = value'
-              new = '            elif key == \"match_filter\" and isinstance(value, str):\\n                self.opts[key] = match_filter_func(value)\\n            else:\\n                self.opts[key] = value'
-              if old in content:
-                  content = content.replace(old, new, 1)
-                  with open('$YTDLP_FILE', 'w') as f:
-                      f.write(content)
-                  print('Fix 4: _set_options patched for match_filter')
-              else:
-                  print('WARNING: Fix 4 pattern not found in _set_options')
-              "
+          with open('$YTDLP_FILE', 'r') as f:
+              content = f.read()
+          old = '            else:\\n                self.opts[key] = value'
+          new = '            elif key == \"match_filter\" and isinstance(value, str):\\n                self.opts[key] = match_filter_func(value)\\n            else:\\n                self.opts[key] = value'
+          if old in content:
+              content = content.replace(old, new, 1)
+              with open('$YTDLP_FILE', 'w') as f:
+                  f.write(content)
+              print('Fix 4: _set_options patched for match_filter')
+          else:
+              print('WARNING: Fix 4 pattern not found in _set_options')
+          "
 
               echo "yt-dlp patches applied."
             else
@@ -129,31 +129,33 @@ jobs:
 
             # ── COPY LOCAL PLUGINS FROM REPO ──────────────────────────
             mkdir -p "$SRC_DIR/plugins"
-            # Copy spotify_plugin.py from repo checkout
-            if [ -f "spotify_plugin.py" ]; then
+            # Copy spotify_plugin.py from repo checkout (use GITHUB_WORKSPACE — preserved across cd)
+            REPO_ROOT="${GITHUB_WORKSPACE:-$PWD}"
+            if [ -f "$REPO_ROOT/spotify_plugin.py" ]; then
               echo "Copying spotify_plugin.py to $LABEL plugins/"
-              cp spotify_plugin.py "$SRC_DIR/plugins/spotify_plugin.py"
+              cp "$REPO_ROOT/spotify_plugin.py" "$SRC_DIR/plugins/spotify_plugin.py"
             else
               echo "WARNING: spotify_plugin.py not found in repo"
             fi
             # Copy branch_switcher.py from repo checkout
-            if [ -f "branch_switcher.py" ]; then
+            if [ -f "$REPO_ROOT/branch_switcher.py" ]; then
               echo "Copying branch_switcher.py to $LABEL plugins/"
-              cp branch_switcher.py "$SRC_DIR/plugins/branch_switcher.py"
+              cp "$REPO_ROOT/branch_switcher.py" "$SRC_DIR/plugins/branch_switcher.py"
             else
               echo "WARNING: branch_switcher.py not found in repo"
             fi
             # Copy any other .py files from repo root that look like plugins
-            for f in *.py; do
-              [ "$f" = "*.py" ] && continue
-              [ "$f" = "spotify_plugin.py" ] && continue
-              [ "$f" = "branch_switcher.py" ] && continue
-              [ "$f" = "broadcast.py" ] && continue
-              echo "Copying $f to $LABEL plugins/"
+            for f in "$REPO_ROOT"/*.py; do
+              [ ! -f "$f" ] && continue
+              fname=$(basename "$f")
+              [ "$fname" = "spotify_plugin.py" ] && continue
+              [ "$fname" = "branch_switcher.py" ] && continue
+              [ "$fname" = "broadcast.py" ] && continue
+              echo "Copying $fname to $LABEL plugins/"
               cp "$f" "$SRC_DIR/plugins/"
             done
 
-            # ── DOWNLOAD REMOTE PLUGINS FROM PLUGIN_SOURCES ──────────
+            # ── DOWNLOAD REMOTE PLUGINS FROM PLUGIN_SOURCESs ──────────
             # PLUGIN_SOURCES is a GitHub secret containing one URL per line.
             # Each URL should point to a raw .py file (gist or repo raw URL).
             # Example:
@@ -183,8 +185,8 @@ jobs:
               if ! grep -q "spotdl" "$DOCKERFILE"; then
                 echo "Adding spotdl + ffmpeg + deno to Dockerfile ($LABEL)..."
                 sed -i '/^COPY . .$/i RUN uv pip install --python /wzvenv/bin/python --no-cache-dir spotdl' "$DOCKERFILE"
-                sed -i '/^COPY . .$/i RUN /wzvenv/bin/spotdl --download-ffmpeg' "$DOCKERFILE"
-                sed -i '/^COPY . .$/i RUN /wzvenv/bin/spotdl --download-deno' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN echo y | /wzvenv/bin/spotdl --download-ffmpeg || true' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN echo y | /wzvenv/bin/spotdl --download-deno || true' "$DOCKERFILE"
                 echo "--- Updated Dockerfile ($LABEL) ---"
                 cat "$DOCKERFILE"
               fi
@@ -237,7 +239,12 @@ jobs:
           apply_patches /tmp/wzml-stable "STABLE (wzv3)"
           echo "=== Building STABLE Docker image ==="
           cd /tmp/wzml-stable
-          docker build -t wzml-bot:stable . 2>&1 | tail -20
+          docker build -t wzml-bot:stable . 2>&1 | tail -30
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "ERROR: Stable image build failed (exit code $BUILD_EXIT)"
+            exit 1
+          fi
           echo "Stable image built."
 
           # ════════════════════════════════════════════════════════════
@@ -247,9 +254,15 @@ jobs:
             apply_patches /tmp/wzml-plugindev "PLUGIN-DEV"
             echo "=== Building PLUGIN-DEV Docker image ==="
             cd /tmp/wzml-plugindev
-            docker build -t wzml-bot:plugindev . 2>&1 | tail -20
-            echo "Plugin-dev image built."
+            docker build -t wzml-bot:plugindev . 2>&1 | tail -30
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "WARNING: Plugin-dev image build failed (exit code $BUILD_EXIT)"
+            echo "PLUGINDEV_AVAILABLE=false" >> $GITHUB_ENV
+          else
             echo "PLUGINDEV_AVAILABLE=true" >> $GITHUB_ENV
+          fi
+            echo "Plugin-dev image built."
           else
             echo "plugin-dev branch not available, only stable image built"
             echo "PLUGINDEV_AVAILABLE=false" >> $GITHUB_ENV
@@ -295,10 +308,9 @@ jobs:
         shell: bash {0}
         run: |
           # ════════════════════════════════════════════════════════════
-          #  Create shared volume for branch switcher signal
+          #  Create shared directory for branch switcher signal
           # ════════════════════════════════════════════════════════════
-          docker volume create bs_signal_vol 2>/dev/null || true
-          SIGNAL_PATH="/bs_signal_vol"
+          SIGNAL_PATH="${GITHUB_WORKSPACE}/bs_signal"
           mkdir -p "$SIGNAL_PATH"
           # Clean any stale signal files from previous runs
           rm -f "$SIGNAL_PATH/switch" "$SIGNAL_PATH/.switching" 2>/dev/null || true
@@ -347,7 +359,7 @@ jobs:
               -e WEB_ACCESS_PASSWORD="${WEB_ACCESS_PASSWORD}" \
               -e TIMEZONE="Asia/Kolkata" \
               -e BRANCH_LABEL="${LABEL}" \
-              -v bs_signal_vol:/bs_signal \
+              -v "$SIGNAL_PATH":/bs_signal \
               -p 8080:8080 \
               "$IMAGE"
 
@@ -386,7 +398,7 @@ jobs:
                 -e UPSTREAM_REPO="${UPSTREAM_REPO}" \
                 -e UPSTREAM_BRANCH="${UPSTREAM_BRANCH}" \
                 -e TIMEZONE="Asia/Kolkata" \
-                -v bs_signal_vol:/bs_signal \
+                -v "$SIGNAL_PATH":/bs_signal \
                 "$IMAGE" 2>&1 | tail -80 || echo "(foreground run timed out or failed)"
               echo ""
               echo "=== CRASH DIAGNOSTICS COMPLETE ==="
@@ -420,7 +432,7 @@ jobs:
                 -e WEB_ACCESS_PASSWORD="${WEB_ACCESS_PASSWORD}" \
                 -e TIMEZONE="Asia/Kolkata" \
                 -e BRANCH_LABEL="${LABEL}" \
-                -v bs_signal_vol:/bs_signal \
+                -v "$SIGNAL_PATH":/bs_signal \
                 -p 8080:8080 \
                 "$IMAGE"
               sleep 15
@@ -471,7 +483,7 @@ jobs:
 
           echo "Bot will run for $((TOTAL_SEC / 3600))h $(((TOTAL_SEC % 3600) / 60))m"
 
-          SIGNAL_PATH="/bs_signal_vol"
+          SIGNAL_PATH="${GITHUB_WORKSPACE}/bs_signal"
           CURRENT_LABEL="stable"
 
           # --- Start Cloudflare tunnel ---
@@ -599,7 +611,7 @@ jobs:
                     -e WEB_ACCESS_PASSWORD="${WEB_ACCESS_PASSWORD}" \
                     -e TIMEZONE="Asia/Kolkata" \
                     -e BRANCH_LABEL="${TARGET}" \
-                    -v bs_signal_vol:/bs_signal \
+                    -v "$SIGNAL_PATH":/bs_signal \
                     -p 8080:8080 \
                     "$NEW_IMAGE"
 
@@ -646,7 +658,7 @@ jobs:
                       -e WEB_ACCESS_PASSWORD="${WEB_ACCESS_PASSWORD}" \
                       -e TIMEZONE="Asia/Kolkata" \
                       -e BRANCH_LABEL="stable" \
-                      -v bs_signal_vol:/bs_signal \
+                      -v "$SIGNAL_PATH":/bs_signal \
                       -p 8080:8080 \
                       wzml-bot:stable
                     sleep 30
