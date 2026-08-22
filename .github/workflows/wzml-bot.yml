@@ -187,10 +187,14 @@ jobs:
             if [ -f "$DOCKERFILE" ]; then
               if ! grep -q "spotdl" "$DOCKERFILE"; then
                 echo "Adding spotdl + ffmpeg + deno to Dockerfile ($LABEL)..."
-                sed -i '/^COPY . .$/i RUN uv pip install --python /wzvenv/bin/python --no-cache-dir spotdl' "$DOCKERFILE"
-                sed -i '/^COPY . .$/i RUN uv pip install --python /wzvenv/bin/python --no-cache-dir --upgrade yt-dlp' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN uv pip install --python /wzvenv/bin/python --no-cache-dir spotdl pymongo' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN uv pip install --python /wzvenv/bin/python --no-cache-dir --upgrade yt-dlp ytmusicapi' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN uv pip install --python /wzvenv/bin/python --no-cache-dir pymongo brotli websockets' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN curl -fsSL https://deno.land/install.sh | sh' "$DOCKERFILE"
                 sed -i '/^COPY . .$/i RUN echo y | /wzvenv/bin/spotdl --download-ffmpeg || true' "$DOCKERFILE"
-                sed -i '/^COPY . .$/i RUN echo y | /wzvenv/bin/spotdl --download-deno || true' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN /wzvenv/bin/spotdl --download-deno || true' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i ENV PATH="/root/.deno/bin:$PATH"' "$DOCKERFILE"
+                sed -i '/^COPY . .$/i RUN /wzvenv/bin/pip install -U brotli websockets' "$DOCKERFILE"
                 echo "--- Updated Dockerfile ($LABEL) ---"
                 cat "$DOCKERFILE"
               fi
