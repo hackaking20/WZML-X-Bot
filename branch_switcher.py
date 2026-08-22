@@ -2,21 +2,21 @@ from __future__ import annotations
 
 """
 Branch Switcher Plugin for WZML-X
-Adds /bs command (owner only) to switch between Stable (wzv3) and Plugin-Dev branches.
+Adds /switch command (admin only) to switch between Stable (wzv3) and Plugin-Dev branches.
 
 How it works:
 - The workflow builds both images: wzml-bot:stable and wzml-bot:plugindev
 - The workflow mounts a shared volume at /bs_signal between the host and container
-- When the owner sends /bs, the plugin writes a signal file to /bs_signal/switch
+- When an admin sends /switch, the plugin writes a signal file to /bs_signal/switch
 - The workflow's keep-alive loop detects the signal file, stops the current container,
   starts the other image, and the bot restarts on the new branch
-- The plugin also shows the current branch via /bs status
+- The plugin also shows the current branch via /switch status
 
 Usage:
-  /bs              Show current branch + available branches
-  /bs stable       Switch to Stable (wzv3) branch
-  /bs plugindev    Switch to Plugin-Dev branch
-  /bs status       Same as /bs (show current branch)
+  /switch              Show current branch + available branches
+  /switch stable       Switch to Stable (wzv3) branch
+  /switch plugindev    Switch to Plugin-Dev branch
+  /switch status       Same as /switch (show current branch)
 """
 
 import os
@@ -39,12 +39,12 @@ LOCK_FILE = SIGNAL_DIR / ".switching"
 class BranchSwitcherPlugin(PluginBase):
     PLUGIN_INFO = PluginInfo(
         name="branch_switcher",
-        version="1.0.0",
+        version="1.1.0",
         author="custom",
-        description="Switch between Stable and Plugin-Dev branches (owner only)",
+        description="Switch between Stable and Plugin-Dev branches (admin only)",
         enabled=True,
         handlers=[],
-        commands=["bs"],
+        commands=["switch"],
         dependencies=[],
     )
 
@@ -92,21 +92,31 @@ def _is_switching() -> bool:
 
 
 @new_task
-async def bs_command(client: Client, message: Message):
-    """Handle /bs command — owner only, switch between branches."""
+async def switch_command(client: Client, message: Message):
+    """Handle /switch command — admin only, switch between branches."""
     from bot import LOGGER
     from bot.core.config_manager import Config
 
-    # Owner only
+    # Admin check: owner or sudo users only
     user_id = message.from_user.id if message.from_user else 0
-    if user_id != Config.OWNER_ID:
-        await send_message(message, "❌ This command is for the owner only.")
+    is_owner = user_id == Config.OWNER_ID
+    is_sudo = False
+    try:
+        sudo_users = Config.SUDO_USERS or []
+        if user_id in sudo_users:
+            is_sudo = True
+    except Exception:
+        pass
+
+    if not is_owner and not is_sudo:
+        await send_message(message, "❌ <b>Access Denied</b>\n\nYou need to be an admin to use this command.")
         return
 
     text = message.text.split("\n")
     args = text[0].split(" ")[1:] if len(text[0].split(" ")) > 1 else []
 
     current_branch = _get_current_branch()
+    available = "stable, plugindev"
     current_display = "Stable (wzv3)" if current_branch == "stable" else "Plugin-Dev"
 
     if not args or args[0].lower() in ("status", "info"):
@@ -118,9 +128,9 @@ async def bs_command(client: Client, message: Message):
             f"  • <code>stable</code> — Default stable release (wzv3)\n"
             f"  • <code>plugindev</code> — Plugin-Dev branch with PluginBase\n\n"
             f"Usage:\n"
-            f"  <code>/bs stable</code> — Switch to Stable\n"
-            f"  <code>/bs plugindev</code> — Switch to Plugin-Dev\n"
-            f"  <code>/bs status</code> — Show this info\n\n"
+            f"  <code>/switch stable</code> — Switch to Stable\n"
+            f"  <code>/switch plugindev</code> — Switch to Plugin-Dev\n"
+            f"  <code>/switch status</code> — Show this info\n\n"
             f"⚠️ Switching takes ~30 seconds. Bot will restart."
         )
         await send_message(message, status_text)
