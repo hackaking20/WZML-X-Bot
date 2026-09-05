@@ -1,0 +1,240 @@
+name: WZML-X Persistent Stream Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Bot run hours (default 5)'
+        required: false
+        default: '5'
+  schedule:
+    - cron: '0 */5 * * *'
+
+concurrency:
+  group: wzml-bot
+  cancel-in-progress: true
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pip install -q pymongo requests
+
+      - name: Clone, patch and build Docker image
+        env:
+          UPSTREAM_REPO: ${{ secrets.UPSTREAM_REPO }}
+          UPSTREAM_BRANCH: ${{ secrets.UPSTREAM_BRANCH || 'wzv3' }}
+        shell: bash {0}
+        run: |
+          UP_REPO="${UPSTREAM_REPO:-https://github.com/SilentDemonSD/WZML-X}"
+          echo "=== Cloning STABLE (wzv3) branch ==="
+          git clone --depth 1 -b wzv3 "$UP_REPO" /tmp/wzml-stable
+          SRC_DIR="/tmp/wzml-stable"
+          rm -rf "$SRC_DIR/.git"
+          find "$SRC_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find "$SRC_DIR" -name "*.pyc" -delete 2>/dev/null || true
+
+          REPO_ROOT="${GITHUB_WORKSPACE:-$PWD}"
+
+          # ─── Patch 1: yt_dlp resilience ───
+          YTDLP_FILE=$(find "$SRC_DIR" -name "yt_dlp_download.py" | head -1)
+          if [ -n "$YTDLP_FILE" ]; then
+            sed -i 's/except DownloadError as e:/except Exception as e:/' "$YTDLP_FILE"
+            sed -i 's/with suppress(Exception):/with suppress():/' "$YTDLP_FILE"
+            sed -i '/"fragment_retries": 10,/a            "socket_timeout": 30,' "$YTDLP_FILE"
+            echo "Patch 1 (yt_dlp): applied"
+          fi
+
+          # ─── Patch 2: Fix broadcast crash ───
+          python3 "$REPO_ROOT/patches/patch2.py" "$SRC_DIR/bot/helper/ext_utils/db_handler.py"
+          BCAST_FILE="$SRC_DIR/bot/modules/broadcast.py"
+          if [ -f "$BCAST_FILE" ]; then
+            sed -i 's/for uid in await database.get_pm_uids():/for uid in (await database.get_pm_uids() or []):/' "$BCAST_FILE"
+            echo "Patch 2 (broadcast): applied"
+          fi
+
+          # ─── Patch 3: Fix stream "file is gone" ───
+          TSTREAM_FILE="$SRC_DIR/bot/helper/telegram_helper/tg_stream.py"
+          python3 "$REPO_ROOT/patches/patch3.py" "$TSTREAM_FILE"
+
+          # ─── Patch 5: Fix tunnel_monitor ───
+          TMON_FILE="$SRC_DIR/bot/helper/ext_utils/tunnel_monitor.py"
+          python3 "$REPO_ROOT/patches/patch5.py" "$TMON_FILE"
+
+          # ─── Apply user_stream patches ───
+          cp -r "$REPO_ROOT/user_stream" "$SRC_DIR/user_stream"
+          python3 "$SRC_DIR/user_stream/install_patch.py" "$SRC_DIR"
+
+          # ─── Patch 9: Stream HTML stall UI ───
+          HTML_FILE="$SRC_DIR/web/templates/stream.html"
+          python3 "$REPO_ROOT/patches/patch9.py" "$HTML_FILE"
+
+          # ─── Patch 12: Auth overlay ───
+          python3 "$REPO_ROOT/patches/patch12.py" "$HTML_FILE"
+
+          # ─── Patch 15: bot_settings STREAM_PASS ───
+          BS_FILE="$SRC_DIR/bot/modules/bot_settings.py"
+          python3 "$REPO_ROOT/patches/patch15.py" "$BS_FILE"
+
+          # ─── Copy plugins ───
+          mkdir -p "$SRC_DIR/plugins"
+          for f in "$REPO_ROOT"/*.py; do
+            [ ! -f "$f" ] && continue
+            fname=$(basename "$f")
+            [ "$fname" = "notify.py" ] && continue
+            echo "Copying plugin: $fname"
+            cp "$f" "$SRC_DIR/plugins/$fname"
+          done
+
+          # ─── Verify patches ───
+          echo "=== Verifying patches ==="
+          grep -c "_bot_name" "$TSTREAM_FILE" && echo "tg_stream.py patched OK" || echo "tg_stream.py: NOT FOUND"
+          grep -c "USER_STREAM_PATCHED" "$SRC_DIR/bot/core/stream_server.py" && echo "stream_server user_stream: OK" || echo "stream_server user_stream: NOT FOUND"
+          grep -c "USER_STREAM_PATCHED" "$SRC_DIR/web/wserver.py" && echo "wserver user_stream: OK" || echo "wserver user_stream: NOT FOUND"
+          grep -c "URLSearchParams" "$HTML_FILE" && echo "Patch 9: OK" || echo "Patch 9: NOT FOUND"
+          grep -c "clearToken" "$HTML_FILE" && echo "Patch 12 (401 handler): OK" || echo "Patch 12: NOT FOUND"
+          grep -c "stream_auth" "$SRC_DIR/web/wserver.py" && echo "wserver auth: OK" || echo "wserver auth: NOT FOUND"
+          grep -c "STREAM_PASS" "$SRC_DIR/bot/core/config_manager.py" && echo "config STREAM_PASS: OK" || echo "config STREAM_PASS: NOT FOUND"
+          grep -c "STREAM_PASS" "$BS_FILE" && echo "Patch 15: OK" || echo "Patch 15: NOT FOUND"
+          grep -c "keeping stable" "$TMON_FILE" && echo "tunnel_monitor: OK" || echo "tunnel_monitor: NOT FOUND"
+          python3 -c "import py_compile; py_compile.compile('$TSTREAM_FILE', doraise=True)" && echo "tg_stream.py syntax OK"
+          python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/stream_server.py', doraise=True)" && echo "stream_server.py syntax OK"
+          python3 -c "import py_compile; py_compile.compile('$SRC_DIR/web/wserver.py', doraise=True)" && echo "wserver.py syntax OK"
+          python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/config_manager.py', doraise=True)" && echo "config_manager.py syntax OK"
+          python3 -c "import py_compile; py_compile.compile('$BS_FILE', doraise=True)" && echo "bot_settings.py syntax OK"
+
+          cd /tmp/wzml-stable
+          docker build -t wzml-bot:stable . 2>&1 | tail -30
+
+      - name: Start Cloudflare Tunnel and sync to Worker
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        shell: bash {0}
+        run: |
+          echo "=== Starting Cloudflared Quick Tunnel ==="
+          wget -q -O /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x /tmp/cloudflared
+          /tmp/cloudflared tunnel --url http://localhost:8080 > /tmp/tunnel.log 2>&1 &
+          TUNNEL_URL=""
+          for i in {1..30}; do
+            sleep 2
+            TUNNEL_URL=$(grep -o 'https://[-a-zA-Z0-9]*\.trycloudflare\.com' /tmp/tunnel.log | head -n 1)
+            if [ -n "$TUNNEL_URL" ]; then
+              echo ">>> Tunnel established: $TUNNEL_URL"
+              break
+            fi
+          done
+          if [ -z "$TUNNEL_URL" ]; then
+            echo "ERROR: Failed to establish cloudflare tunnel."
+            cat /tmp/tunnel.log
+            exit 1
+          fi
+          TARGET_WORKER="${WORKER_URL%/}"
+          echo "=== Syncing tunnel to Worker ==="
+          SYNC_RES=$(curl -s -X POST "${TARGET_WORKER}/update-tunnel" \
+            -H "Content-Type: application/json" \
+            -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
+            -d "{\"url\": \"${TUNNEL_URL}\"}")
+          echo "Worker Sync Response: $SYNC_RES"
+          mkdir -p /tmp/tunnel_data
+          echo -n "$TUNNEL_URL" > /tmp/tunnel_data/tunnel_url.txt
+          echo "STREAM_URL=${TARGET_WORKER}" >> $GITHUB_ENV
+
+      - name: Launch Bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          TELEGRAM_API: ${{ secrets.TELEGRAM_API }}
+          TELEGRAM_HASH: ${{ secrets.TELEGRAM_HASH }}
+          PORT: '8080'
+          TIMEZONE: 'Asia/Kolkata'
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          RUN_HOURS: ${{ github.event.inputs.hours || '5' }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
+        shell: bash {0}
+        run: |
+          TARGET_URL="${WORKER_URL%/}"
+
+          # ─── Send shutdown countdown notifications ───
+          HOURS=$(echo "${RUN_HOURS}" | bc -l 2>/dev/null || echo "5")
+          TOTAL_SEC=$(echo "$HOURS * 3600" | bc -l 2>/dev/null || echo "18000")
+          TOTAL_SEC=$(printf "%.0f" "$TOTAL_SEC")
+
+          # Calculate notification times (10 min and 2 min before shutdown)
+          NOTIFY_10_MIN=$((TOTAL_SEC - 600))
+          NOTIFY_2_MIN=$((TOTAL_SEC - 120))
+
+          # Start countdown notifier in background
+          (
+            sleep $NOTIFY_10_MIN
+            python3 "${GITHUB_WORKSPACE:-$PWD}/notify.py" shutdown 10 "${BOT_TOKEN}" "${OWNER_ID}"
+            sleep 480
+            python3 "${GITHUB_WORKSPACE:-$PWD}/notify.py" shutdown 2 "${BOT_TOKEN}" "${OWNER_ID}"
+          ) &
+          NOTIFY_PID=$!
+
+          # ─── Start the bot ───
+          docker rm -f wzml_bot 2>/dev/null || true
+          docker run -d \
+            --name wzml_bot \
+            --net=host \
+            -e PYTHONUNBUFFERED=1 \
+            -e BOT_TOKEN="${BOT_TOKEN}" \
+            -e TELEGRAM_API="${TELEGRAM_API}" \
+            -e TELEGRAM_HASH="${TELEGRAM_HASH}" \
+            -e OWNER_ID="${OWNER_ID}" \
+            -e DATABASE_URL="${DATABASE_URL}" \
+            -e PORT="8080" \
+            -e TIMEZONE="Asia/Kolkata" \
+            -e BASE_URL="${TARGET_URL}" \
+            -e TUNNEL_URL_FILE="/data/tunnel_url.txt" \
+            -v /tmp/tunnel_data:/data:rw \
+            wzml-bot:stable
+
+          echo "=== Container started. Waiting 20s for bot to initialize... ==="
+          sleep 20
+
+          # ─── Health check ───
+          echo "=== Health Check ==="
+          HEALTH_RES=$(curl -s "${TARGET_URL}/health")
+          echo "Health: $HEALTH_RES"
+          if echo "$HEALTH_RES" | grep -q '"bot_responding":true'; then
+            echo ">>> FULL CHAIN HEALTHY: Worker → Tunnel → Bot OK"
+          else
+            echo ">>> WARNING: Bot not responding yet. Waiting 15 more seconds..."
+            sleep 15
+            HEALTH_RES=$(curl -s "${TARGET_URL}/health")
+            echo "Health retry: $HEALTH_RES"
+          fi
+
+          # ─── Send startup notification ───
+          python3 "${GITHUB_WORKSPACE:-$PWD}/notify.py" startup "${BOT_TOKEN}" "${OWNER_ID}" "${NTFY_TOPIC}" "${TARGET_URL}"
+
+          # ─── Stream logs until timeout ───
+          ( while true; do
+              sleep 300
+              echo "--- Health check at $(date) ---"
+              curl -s "${TARGET_URL}/health" 2>/dev/null || echo "health check failed"
+              echo ""
+          done ) &
+          HEALTH_PID=$!
+
+          timeout "$TOTAL_SEC" docker logs -f wzml_bot || true
+          kill $HEALTH_PID 2>/dev/null || true
+          kill $NOTIFY_PID 2>/dev/null || true
+
+      - name: Stop container and cleanup
+        if: always()
+        run: |
+          docker stop wzml_bot 2>/dev/null || true
+          docker rm -f wzml_bot 2>/dev/null || true
+          pkill -f cloudflared 2>/dev/null || true

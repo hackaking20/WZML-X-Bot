@@ -1,0 +1,7 @@
+secrets.env
+secrets.env.example
+__pycache__/
+*.pyc
+*.pyo
+*.zip
+*.log
