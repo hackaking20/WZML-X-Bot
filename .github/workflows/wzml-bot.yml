@@ -83,7 +83,7 @@ jobs:
           BS_FILE="$SRC_DIR/bot/modules/bot_settings.py"
           python3 "$REPO_ROOT/patches/patch15.py" "$BS_FILE"
 
-          # ─── Copy plugins ───
+          # ─── Copy plugins (skip notify.py — used by workflow, not a plugin) ───
           mkdir -p "$SRC_DIR/plugins"
           for f in "$REPO_ROOT"/*.py; do
             [ ! -f "$f" ] && continue
@@ -146,7 +146,6 @@ jobs:
           echo "Worker Sync Response: $SYNC_RES"
           mkdir -p /tmp/tunnel_data
           echo -n "$TUNNEL_URL" > /tmp/tunnel_data/tunnel_url.txt
-          echo "STREAM_URL=${TARGET_WORKER}" >> $GITHUB_ENV
 
       - name: Launch Bot
         env:
@@ -169,13 +168,11 @@ jobs:
           TOTAL_SEC=$(echo "$HOURS * 3600" | bc -l 2>/dev/null || echo "18000")
           TOTAL_SEC=$(printf "%.0f" "$TOTAL_SEC")
 
-          # Calculate notification times (10 min and 2 min before shutdown)
-          NOTIFY_10_MIN=$((TOTAL_SEC - 600))
-          NOTIFY_2_MIN=$((TOTAL_SEC - 120))
+          # Notification: 10 min before shutdown, then 2 min before
+          NOTIFY_AT=$((TOTAL_SEC - 600))
 
-          # Start countdown notifier in background
           (
-            sleep $NOTIFY_10_MIN
+            sleep $NOTIFY_AT
             python3 "${GITHUB_WORKSPACE:-$PWD}/notify.py" shutdown 10 "${BOT_TOKEN}" "${OWNER_ID}"
             sleep 480
             python3 "${GITHUB_WORKSPACE:-$PWD}/notify.py" shutdown 2 "${BOT_TOKEN}" "${OWNER_ID}"
