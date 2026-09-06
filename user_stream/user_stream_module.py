@@ -10,7 +10,6 @@ All bug fixes from Claude v3 + v4 reviews applied.
 from __future__ import annotations
 
 import asyncio
-import hmac
 import json
 import time as _time
 from asyncio import (
@@ -23,7 +22,6 @@ from asyncio import (
 )
 from collections import OrderedDict
 from dataclasses import replace
-from hashlib import sha256
 from time import monotonic
 
 from pyrogram import raw
@@ -335,53 +333,6 @@ async def probe_user(chat_id, msg_id):
         "mime": getattr(fid, "mime_type", "") or "",
         "unique_id": getattr(fid, "unique_id", "") or "",
     }
-
-
-# ─── AUTH LAYER ───────────────────────────────────────────────────
-
-_AUTH_TTL = 24 * 3600
-
-
-def _get_nonce(password: str) -> str:
-    """Stable nonce derived from STREAM_PASS — survives restarts."""
-    return sha256(f"wzml-nonce:{password}".encode()).hexdigest()[:16]
-
-
-def _get_stream_pass() -> str:
-    return getattr(Config, "STREAM_PASS", "") or ""
-
-
-def _sign_token(password: str) -> str:
-    ts = int(_time.time())
-    nonce = _get_nonce(password)
-    msg = f"{ts}:{nonce}".encode()
-    sig = hmac.new(password.encode(), msg, sha256).hexdigest()
-    return f"{ts}.{sig}"
-
-
-def _verify_token(token: str, password: str) -> bool:
-    if not token or not password:
-        return False
-    try:
-        ts_str, sig = token.split(".", 1)
-        ts = int(ts_str)
-    except (ValueError, AttributeError):
-        return False
-    if _time.time() - ts > _AUTH_TTL:
-        return False
-    nonce = _get_nonce(password)
-    msg = f"{ts}:{nonce}".encode()
-    expected = hmac.new(password.encode(), msg, sha256).hexdigest()
-    return hmac.compare_digest(sig, expected)
-
-
-def check_auth(request) -> bool:
-    """Check if request has valid auth for user-account streaming."""
-    password = _get_stream_pass()
-    if not password:
-        return True
-    token = request.query.get("auth")
-    return _verify_token(token, password)
 
 
 # ─── HEALTH CHECK ─────────────────────────────────────────────────
