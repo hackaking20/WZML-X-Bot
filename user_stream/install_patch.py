@@ -48,8 +48,8 @@ def copy_stall_ui(repo):
 def patch_config(repo):
     f = repo / "bot" / "core" / "config_manager.py"
     content = f.read_text(encoding="utf-8")
-    if "MAX_STREAM_VIEWERS" in content:
-        print("  [skip] config_manager.py already has MAX_STREAM_VIEWERS")
+    if "PRIORITY_KEY" in content:
+        print("  [skip] config_manager.py already has PRIORITY_KEY")
         return
     marker = "    DISABLE_STREAM = False\n"
     insertion = (
@@ -58,10 +58,11 @@ def patch_config(repo):
         "    STREAM_DEBUG = False\n"
         "    STREAM_HEALTH_INTERVAL = 1800\n"
         "    MAX_STREAM_VIEWERS = 3\n"
+        '    PRIORITY_KEY = ""\n'
     )
     content = content.replace(marker, insertion, 1)
     f.write_text(content, encoding="utf-8")
-    print("  [ok] Patched config_manager.py — added STREAM_PASS, STREAM_DEBUG, STREAM_HEALTH_INTERVAL, MAX_STREAM_VIEWERS")
+    print("  [ok] Patched config_manager.py — added STREAM_PASS, STREAM_DEBUG, STREAM_HEALTH_INTERVAL, MAX_STREAM_VIEWERS, PRIORITY_KEY")
 
 
 def patch_stream_server(repo):
