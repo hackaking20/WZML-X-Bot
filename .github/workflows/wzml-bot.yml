@@ -76,7 +76,7 @@ jobs:
           HTML_FILE="$SRC_DIR/web/templates/stream.html"
           python3 "$REPO_ROOT/patches/patch9.py" "$HTML_FILE"
 
-          # ─── Patch 12: Auth overlay ───
+          # ─── Patch 12: Auth token forwarding ───
           python3 "$REPO_ROOT/patches/patch12.py" "$HTML_FILE"
 
           # ─── Patch 15: bot_settings STREAM_PASS ───
@@ -99,7 +99,7 @@ jobs:
           grep -c "USER_STREAM_PATCHED" "$SRC_DIR/bot/core/stream_server.py" && echo "stream_server user_stream: OK" || echo "stream_server user_stream: NOT FOUND"
           grep -c "USER_STREAM_PATCHED" "$SRC_DIR/web/wserver.py" && echo "wserver user_stream: OK" || echo "wserver user_stream: NOT FOUND"
           grep -c "URLSearchParams" "$HTML_FILE" && echo "Patch 9: OK" || echo "Patch 9: NOT FOUND"
-          grep -c "clearToken" "$HTML_FILE" && echo "Patch 12 (401 handler): OK" || echo "Patch 12: NOT FOUND"
+          grep -c "_streamAuth" "$HTML_FILE" && echo "Patch 12: OK" || echo "Patch 12: NOT FOUND"
           grep -c "stream_auth" "$SRC_DIR/web/wserver.py" && echo "wserver auth: OK" || echo "wserver auth: NOT FOUND"
           grep -c "STREAM_PASS" "$SRC_DIR/bot/core/config_manager.py" && echo "config STREAM_PASS: OK" || echo "config STREAM_PASS: NOT FOUND"
           grep -c "STREAM_PASS" "$BS_FILE" && echo "Patch 15: OK" || echo "Patch 15: NOT FOUND"
@@ -212,26 +212,27 @@ jobs:
             -v /tmp/tunnel_data:/data:rw \
             wzml-bot:stable
 
-          echo "=== Container started. Waiting 20s for bot to initialize... ==="
-          sleep 20
+          echo "=== Container started. Waiting 45s for bot to fully initialize... ==="
+          sleep 45
 
-          # ─── Health check with Worker re-sync ───
+          # ─── Health check with 3 retries ───
           echo "=== Health Check ==="
-          HEALTH_RES=$(curl -s "${TARGET_URL}/health")
-          echo "Health: $HEALTH_RES"
-
-          if echo "$HEALTH_RES" | grep -q '"bot_responding":true'; then
-            echo ">>> FULL CHAIN HEALTHY: Worker → Tunnel → Bot OK"
-          else
-            echo ">>> Health check failed. Re-syncing tunnel and waiting 30s..."
-            curl -s -X POST "${TARGET_URL}/update-tunnel" \
-              -H "Content-Type: application/json" \
-              -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
-              -d "{\"url\": \"$(cat /tmp/tunnel_data/tunnel_url.txt)\"}" 2>/dev/null
-            sleep 30
-            HEALTH_RES=$(curl -s "${TARGET_URL}/health")
-            echo "Health retry: $HEALTH_RES"
-          fi
+          for attempt in 1 2 3; do
+            HEALTH_RES=$(curl -s "${TARGET_URL}/health" 2>/dev/null || echo "curl failed")
+            echo "Health attempt $attempt: $HEALTH_RES"
+            if echo "$HEALTH_RES" | grep -q '"bot_responding":true'; then
+              echo ">>> FULL CHAIN HEALTHY: Worker → Tunnel → Bot OK"
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo ">>> Bot not ready yet. Re-syncing tunnel and waiting 15s..."
+              curl -s -X POST "${TARGET_URL}/update-tunnel" \
+                -H "Content-Type: application/json" \
+                -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
+                -d "{\"url\": \"$(cat /tmp/tunnel_data/tunnel_url.txt)\"}" 2>/dev/null
+              sleep 15
+            fi
+          done
 
           # ─── Send startup notification ───
           python3 "${GITHUB_WORKSPACE:-$PWD}/notify.py" startup "${BOT_TOKEN}" "${OWNER_ID}" "${NTFY_TOPIC}" "${TARGET_URL}"
