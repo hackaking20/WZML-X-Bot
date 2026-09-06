@@ -21,10 +21,7 @@ else:
     all_new = old_token_line + '    "STREAM_PASS": "Password for user-account stream access (?user=1). Viewers must enter this to stream via your personal account. Leave empty to disable user-stream auth.",\\n    "MAX_STREAM_VIEWERS": "Max concurrent stream connections (tabs) allowed at the same time. Default 3. Set to 0 for unlimited.",\\n    "PRIORITY_KEY": "Secret key for owner/VIP to bypass the stream limit. Append &pkey=SECRET to stream URL. Leave empty to disable.",\\n'
     content = content.replace(old_token_line, all_new, 1)
 
-# 2. Add PRIORITY_KEY to PROTECTED_VARS so it doesn't leak in /config display
-old_protected_end = '    "DATABASE_URL",\n}'
-new_protected_end = '    "DATABASE_URL",\n    "PRIORITY_KEY",\n}'
-content = content.replace(old_protected_end, new_protected_end, 1)
+# NOTE: Not adding anything to PROTECTED_VARS so all three settings keep their reset button.
 
 with open(sys.argv[1], 'w') as f:
     f.write(content)
