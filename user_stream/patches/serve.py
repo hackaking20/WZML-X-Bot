@@ -1,3 +1,22 @@
+from asyncio import Lock as _SlotLock
+
+_active_streams = 0
+_slot_lock = _SlotLock()
+
+async def _acquire_stream_slot():
+    global _active_streams
+    limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
+    async with _slot_lock:
+        if _active_streams >= limit:
+            return False
+        _active_streams += 1
+        return True
+
+async def _release_stream_slot():
+    global _active_streams
+    async with _slot_lock:
+        _active_streams = max(0, _active_streams - 1)
+
 async def _serve(request, kind):
     _, cid, mid = await _resolve(request)
     inline = kind == "playback"
@@ -9,6 +28,19 @@ async def _serve(request, kind):
             text="user stream requires authentication",
             headers={"X-Stream-Auth-Required": "1"},
         )
+
+    # ── Concurrent stream limiter ──
+    # Only actual streaming (GET) counts — HEAD probes are free
+    _slot_held = False
+    if request.method != "HEAD":
+        allowed = await _acquire_stream_slot()
+        if not allowed:
+            limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
+            raise web.HTTPServiceUnavailable(
+                text=f"Stream limit reached ({limit} concurrent). Try again later.",
+                headers={"Retry-After": "30", "X-Stream-Limit": str(limit)},
+            )
+        _slot_held = True
 
     if request.method == "HEAD":
         try:
@@ -61,6 +93,8 @@ async def _serve(request, kind):
     rng = parse_range(request.headers.get("Range"), st.size)
     if rng is None:
         await st._release()
+        if _slot_held:
+            await _release_stream_slot()
         return web.Response(
             status=416,
             headers={
@@ -103,4 +137,6 @@ async def _serve(request, kind):
         LOGGER.error(f"stream failed {cid}/{mid}: {e}")
     finally:
         await gen.aclose()
+        if _slot_held:
+            await _release_stream_slot()
     return resp
