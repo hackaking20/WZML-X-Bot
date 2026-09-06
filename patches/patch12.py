@@ -14,7 +14,7 @@ body_end = content.index('>', body_idx) + 1
 
 AUTH_OVERLAY = """
 <!-- ─── User Stream Auth Overlay ─── -->
-<div id="stream-auth-overlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);backdrop-filter:blur(8px);align-items:center;justify-content:center;">
+<div id="stream-auth-overlay" style="display:flex;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);backdrop-filter:blur(8px);align-items:center;justify-content:center;">
   <div style="background:#1a1a2e;border-radius:12px;padding:28px 32px;max-width:360px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
     <div style="font-size:28px;margin-bottom:6px;">&#128274;</div>
     <div style="color:#e0e0e0;font-size:15px;font-weight:600;margin-bottom:4px;">User Stream Access</div>
@@ -24,6 +24,20 @@ AUTH_OVERLAY = """
     <div id="stream-auth-err" style="color:#ff6b6b;font-size:12px;margin-top:10px;display:none;"></div>
   </div>
 </div>
+<script>
+// Synchronous check: hide overlay immediately if NOT user mode or already have token
+(function() {
+  var isUser = false;
+  try { isUser = new URLSearchParams(location.search).get('user') === '1'; }
+  catch(e) { isUser = location.search.indexOf('user=1') >= 0; }
+  var tok = null;
+  try { tok = localStorage.getItem('wzml_stream_auth'); } catch(e) {}
+  if (!isUser || tok) {
+    var el = document.getElementById('stream-auth-overlay');
+    if (el) el.style.display = 'none';
+  }
+})();
+</script>
 <script>
 (function() {
   var _streamAuth = {
@@ -151,22 +165,25 @@ AUTH_OVERLAY = """
         if (inp) {
           inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); self.doLogin(); } });
         }
+        // Overlay is already visible from first paint (display:flex).
+        // Now check if STREAM_PASS is actually configured.
         if (self.isUserMode() && !self.getToken()) {
-          // Check if STREAM_PASS is actually configured before showing overlay
+          // Overlay is showing — check backend
           fetch('/api/stream_auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ password: 'check' })
           }).then(function(r) {
             if (r.status === 401) {
-              // STREAM_PASS is set, show password overlay
+              // STREAM_PASS is set — keep overlay, focus input
               self.showOverlay();
             } else {
-              // STREAM_PASS not set (200 with error), no auth needed
+              // STREAM_PASS not set — hide overlay, let stream load
               self.resolved = true;
+              self.hideOverlay();
             }
           }).catch(function() {
-            // Network error, show overlay as fallback
+            // Network error — keep overlay as fallback
             self.showOverlay();
           });
         }
@@ -252,4 +269,4 @@ content = content.replace(old_catch_block, new_catch_block, 1)
 with open(sys.argv[1], 'w') as f:
     f.write(content)
 
-print("PATCHED stream.html: auth overlay + localStorage token + auth param forwarding + skip-when-no-pass")
+print("PATCHED stream.html: auth overlay (visible-by-default) + sync-hide + async-check + token forwarding")
