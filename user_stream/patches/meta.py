@@ -2,12 +2,6 @@ async def _meta(request):
     token, cid, mid = await _resolve(request)
     use_user = request.query.get("user") == "1"
 
-    if use_user and not _us_check_auth(request):
-        raise web.HTTPUnauthorized(
-            text="user stream requires authentication",
-            headers={"X-Stream-Auth-Required": "1"},
-        )
-
     try:
         if use_user:
             info = await probe_user(cid, mid)
