@@ -48,8 +48,6 @@ def copy_stall_ui(repo):
 def patch_config(repo):
     f = repo / "bot" / "core" / "config_manager.py"
     content = f.read_text(encoding="utf-8")
-    # FIX: Use STREAM_PASS as idempotency sentinel (more specific than PRIORITY_KEY
-    # which upstream could theoretically add for unrelated reasons).
     if "STREAM_PASS" in content:
         print("  [skip] config_manager.py already has STREAM_PASS")
         return
@@ -85,6 +83,7 @@ def patch_stream_server(repo):
             "    purge_fid_user,\n"
             "    check_auth as _us_check_auth,\n"
             ")\n"
+            "from ..core.config_manager import Config\n"
             "# USER_STREAM_PATCHED"
         )
         content = content[:import_end + 1] + new_import + content[import_end + 1:]
@@ -183,9 +182,6 @@ def patch_config_load_dict(repo):
         print("  [WARN] Could not find validation block in load_dict")
         return
 
-    # FIX: _new_base must read from config_dict (the incoming MongoDB value),
-    # NOT from cls.BASE_URL (which is the same as _current_base — making the
-    # condition always False and the guard permanently dead).
     guard = (
         "        # USER_STREAM_BASEURL_GUARD\n"
         '        _current_base = getattr(cls, "BASE_URL", "") or ""\n'
