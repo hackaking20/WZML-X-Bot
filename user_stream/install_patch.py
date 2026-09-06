@@ -79,6 +79,7 @@ def patch_stream_server(repo):
             "    open_stream_user,\n"
             "    probe_user,\n"
             "    purge_fid_user,\n"
+            "    check_auth as _us_check_auth,\n"
             ")\n"
             "# USER_STREAM_PATCHED"
         )
@@ -94,7 +95,7 @@ def patch_stream_server(repo):
 
     # Replace _meta function
     old_meta_start = content.find("async def _meta(request):")
-    old_meta_end = content.find("\n\nasync def _seream(")
+    old_meta_end = content.find("\n\nasync def _serve(")
     if old_meta_start < 0 or old_meta_end < 0:
         print("  [ERROR] Could not find _meta function boundaries")
         return
@@ -116,11 +117,15 @@ def patch_wserver(repo):
     if import_marker in content:
         us_import = (
             import_marker +
-            "\nfrom bot.helper.user_stream_module import (\n"
-            "    start_health_check as _us_start_health,\n"
-            "    get_last_result as _us_health_result,\n"
-            ")\n"
-            "# USER_STREAM_PATCHED"
+            "\nfrom bot.helper.user_stream_module import ("
+            "\n    _get_stream_pass as _us_get_pass,"
+            "\n    _sign_token as _us_sign,"
+            "\n    _verify_token as _us_verify,"
+            "\n    start_health_check as _us_start_health,"
+            "\n    get_last_result as _us_health_result,"
+            "\n)"
+            "\nimport hmac as _us_hmac"
+            "\n# USER_STREAM_PATCHED"
         )
         content = content.replace(import_marker, us_import, 1)
 
@@ -148,13 +153,13 @@ def patch_wserver(repo):
         return
     content = content[:old_xstrm_start] + _NEW_XSTRM + content[old_xstrm_end:]
 
-    # Add /health route + health startup (auth_route.py now only has these)
+    # Add /api/stream_auth route + health startup
     exc_idx = content.find("@app.exception_handler")
     if exc_idx >= 0:
         content = content[:exc_idx] + _AUTH_ROUTE + content[exc_idx:]
 
     f.write_text(content, encoding="utf-8")
-    print("  [ok] Patched wserver.py — stream_proxy, stream_meta, xstrm_page, /health, health startup")
+    print("  [ok] Patched wserver.py — stream_proxy, stream_meta, xstrm_page, /api/stream_auth, health startup")
 
 
 def patch_config_load_dict(repo):
@@ -180,8 +185,8 @@ def patch_config_load_dict(repo):
         '        _current_base = getattr(cls, "BASE_URL", "") or ""\n'
         '        _new_base = getattr(cls, "BASE_URL", "") or ""\n'
         '        if "trycloudflare.com" in _new_base and "trycloudflare.com" not in _current_base and _current_base:\n'
-        '            cls.BASE_URL = _current_base\n'
-        '            LOGGER.info(f"config_manager: keeping stable BASE_URL={_current_base}, ignoring MongoDb value={_new_base}")\n'
+        "            cls.BASE_URL = _current_base\n"
+        '            LOGGER.info(f"config_manager: keeping stable BASE_URL={_current_base}, ignoring MongoDB value={_new_base}")\n'
     )
 
     content = content[:val_idx] + guard + content[val_idx:]
@@ -189,10 +194,10 @@ def patch_config_load_dict(repo):
     print("  [ok] Patched config_manager.py — BASE_URL guard in load_dict()")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════
 # Replacement function bodies (loaded from external files to avoid
 # quoting issues with f-strings inside triple-quoted strings)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════════════════════════
 
 def _load_template(name):
     p = Path(__file__).resolve().parent / "patches" / name
