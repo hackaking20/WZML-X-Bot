@@ -7,18 +7,18 @@ if '_streamAuth' in content:
     print("ALREADY PATCHED stream.html: auth infrastructure exists")
     sys.exit(0)
 
-# ─── 1. Inject minimal _streamAuth stub (token forwarding only, no overlay) ───
+# ─── 1. Inject _streamAuth stub with password prompt + token forwarding ───
 body_idx = content.index('<body')
 body_end = content.index('>', body_idx) + 1
 
 AUTH_STUB = """
-<!-- ─── User Stream Auth Token Forwarding (auth handled by Worker) ─── -->
+<!-- ─── User Stream Auth (password prompt + token forwarding) ─── -->
 <script>
 (function() {
   var _streamAuth = {
     LS_KEY: 'wzml_stream_auth',
     token: null,
-    resolved: true,
+    prompting: false,
 
     getToken: function() {
       if (this.token) return this.token;
@@ -53,9 +53,34 @@ AUTH_STUB = """
       return '?auth=' + encodeURIComponent(t);
     },
 
-    init: function() {
-      this.resolved = true;
-    }
+    promptPassword: function() {
+      if (this.prompting) return;
+      this.prompting = true;
+      var pass = prompt('Enter stream password:');
+      if (!pass) {
+        this.prompting = false;
+        return;
+      }
+      var self = this;
+      fetch('/api/stream_auth', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: pass})
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.token) {
+          self.setToken(data.token);
+          location.reload();
+        } else {
+          alert('Auth failed: ' + (data.error || 'unknown'));
+          self.prompting = false;
+        }
+      }).catch(function(err) {
+        alert('Auth request failed: ' + err);
+        self.prompting = false;
+      });
+    },
+
+    init: function() {}
   };
   window._streamAuth = _streamAuth;
   _streamAuth.init();
@@ -107,11 +132,15 @@ for pos, match in fetches_with_userq:
         new_f = match.replace('_userQ', '_userQ + _streamAuth.getAuthParam()')
         content = content[:pos] + new_f + content[pos + len(match):]
 
-# ─── 5. Handle 401 responses from stream endpoints ───
+# ─── 5. Handle 401 responses: prompt for password instead of infinite reload loop ───
 old_catch_block = 'if (new URLSearchParams(location.search).get("user") === "1") {'
 new_catch_block = """if (_streamAuth.isUserMode()) {
+                if (!_streamAuth.getToken()) {
+                    _streamAuth.promptPassword();
+                    return;
+                }
                 _streamAuth.clearToken();
-                location.reload();
+                _streamAuth.promptPassword();
                 return;
             }
             if (new URLSearchParams(location.search).get("user") === "1") {"""
@@ -120,4 +149,4 @@ content = content.replace(old_catch_block, new_catch_block, 1)
 with open(sys.argv[1], 'w') as f:
     f.write(content)
 
-print("PATCHED stream.html: token forwarding only (auth handled by Worker)")
+print("PATCHED stream.html: auth with password prompt + token forwarding")
