@@ -2,23 +2,17 @@ async def _serve(request, kind):
     _, cid, mid = await _resolve(request)
     inline = kind == "playback"
     viewer = request.headers.get("X-Viewer") or request.remote
+    use_user = request.query.get("user") == "1"
 
-    # Always try user account first, fall back to bot clients
-    use_user = True
-    st = None
-    try:
-        st = await open_stream_user(cid, mid, kind, viewer=viewer)
-    except StreamGone:
-        # User account can't find it either — try bot clients as fallback
-        use_user = False
-    except NoClientAvailable:
-        use_user = False
-    except Exception:
-        use_user = False
+    if use_user and not _us_check_auth(request):
+        raise web.HTTPUnauthorized(
+            text="user stream requires authentication",
+            headers={"X-Stream-Auth-Required": "1"},
+        )
 
     if request.method == "HEAD":
         try:
-            if use_user and st is not None:
+            if use_user:
                 info = await probe_user(cid, mid)
             else:
                 info = await probe(cid, mid)
@@ -26,8 +20,12 @@ async def _serve(request, kind):
             purge_fid(cid, mid)
             if use_user:
                 purge_fid_user(cid, mid)
+            if not use_user:
+                raise web.HTTPNotFound(text="file is gone", headers={"X-Stream-Retry": "1"}) from None
             raise web.HTTPNotFound(text="file is gone") from None
         except NoClientAvailable as e:
+            if not use_user:
+                raise web.HTTPServiceUnavailable(text=str(e), headers={"X-Stream-Retry": "1"}) from None
             raise web.HTTPServiceUnavailable(text=str(e)) from None
         return web.Response(
             status=200,
@@ -41,17 +39,24 @@ async def _serve(request, kind):
             },
         )
 
-    # If user account failed but we haven't tried bots yet for streaming
-    if not use_user or st is None:
-        try:
+    try:
+        if use_user:
+            st = await open_stream_user(cid, mid, kind, viewer=viewer)
+        else:
             st = await open_stream(cid, mid, kind, viewer=viewer)
-        except StreamGone:
-            purge_fid(cid, mid)
-            raise web.HTTPNotFound(text="file is gone") from None
-        except NoClientAvailable as e:
-            raise web.HTTPServiceUnavailable(text=str(e), headers={"Retry-After": "10"}) from None
-        except StreamAbort as e:
-            raise web.HTTPBadGateway(text=str(e)) from None
+    except StreamGone:
+        purge_fid(cid, mid)
+        if use_user:
+            purge_fid_user(cid, mid)
+        if not use_user:
+            raise web.HTTPNotFound(text="file is gone", headers={"X-Stream-Retry": "1"}) from None
+        raise web.HTTPNotFound(text="file is gone") from None
+    except NoClientAvailable as e:
+        if not use_user:
+            raise web.HTTPServiceUnavailable(text=str(e), headers={"Retry-After": "10", "X-Stream-Retry": "1"}) from None
+        raise web.HTTPServiceUnavailable(text=str(e), headers={"Retry-After": "10"}) from None
+    except StreamAbort as e:
+        raise web.HTTPBadGateway(text=str(e)) from None
 
     rng = parse_range(request.headers.get("Range"), st.size)
     if rng is None:
