@@ -138,12 +138,26 @@ jobs:
             exit 1
           fi
           TARGET_WORKER="${WORKER_URL%/}"
-          echo "=== Syncing tunnel to Worker ==="
-          SYNC_RES=$(curl -s -X POST "${TARGET_WORKER}/update-tunnel" \
-            -H "Content-Type: application/json" \
-            -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
-            -d "{\"url\": \"${TUNNEL_URL}\"}")
-          echo "Worker Sync Response: $SYNC_RES"
+          echo "=== Syncing tunnel to Worker (with retry) ==="
+          SYNC_OK=0
+          for attempt in 1 2 3; do
+            SYNC_RES=$(curl -s -X POST "${TARGET_WORKER}/update-tunnel" \
+              -H "Content-Type: application/json" \
+              -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
+              -d "{\"url\": \"${TUNNEL_URL}\"}")
+            echo "Worker Sync attempt $attempt: $SYNC_RES"
+            if echo "$SYNC_RES" | grep -q '"ok":true'; then
+              echo ">>> Worker sync OK on attempt $attempt"
+              SYNC_OK=1
+              break
+            fi
+            echo "Sync attempt $attempt failed, waiting 10s before retry..."
+            sleep 10
+          done
+          if [ "$SYNC_OK" -eq 0 ]; then
+            echo "WARNING: Worker sync failed after 3 attempts. Bot will still run via direct tunnel."
+            echo "The Worker may need its code updated. Check cloudflare-worker/stream-worker.js"
+          fi
           mkdir -p /tmp/tunnel_data
           echo -n "$TUNNEL_URL" > /tmp/tunnel_data/tunnel_url.txt
 
@@ -157,6 +171,7 @@ jobs:
           PORT: '8080'
           TIMEZONE: 'Asia/Kolkata'
           WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
           RUN_HOURS: ${{ github.event.inputs.hours || '5' }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
         shell: bash {0}
@@ -200,15 +215,20 @@ jobs:
           echo "=== Container started. Waiting 20s for bot to initialize... ==="
           sleep 20
 
-          # ─── Health check ───
+          # ─── Health check with Worker re-sync ───
           echo "=== Health Check ==="
           HEALTH_RES=$(curl -s "${TARGET_URL}/health")
           echo "Health: $HEALTH_RES"
+
           if echo "$HEALTH_RES" | grep -q '"bot_responding":true'; then
             echo ">>> FULL CHAIN HEALTHY: Worker → Tunnel → Bot OK"
           else
-            echo ">>> WARNING: Bot not responding yet. Waiting 15 more seconds..."
-            sleep 15
+            echo ">>> Health check failed. Re-syncing tunnel and waiting 30s..."
+            curl -s -X POST "${TARGET_URL}/update-tunnel" \
+              -H "Content-Type: application/json" \
+              -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
+              -d "{\"url\": \"$(cat /tmp/tunnel_data/tunnel_url.txt)\"}" 2>/dev/null
+            sleep 30
             HEALTH_RES=$(curl -s "${TARGET_URL}/health")
             echo "Health retry: $HEALTH_RES"
           fi
@@ -220,7 +240,17 @@ jobs:
           ( while true; do
               sleep 300
               echo "--- Health check at $(date) ---"
-              curl -s "${TARGET_URL}/health" 2>/dev/null || echo "health check failed"
+              HEALTH=$(curl -s "${TARGET_URL}/health" 2>/dev/null || echo "health check failed")
+              echo "$HEALTH"
+              # Re-sync tunnel if Worker lost it
+              if echo "$HEALTH" | grep -q 'no tunnel registered'; then
+                echo ">>> Tunnel lost! Re-syncing to Worker..."
+                curl -s -X POST "${TARGET_URL}/update-tunnel" \
+                  -H "Content-Type: application/json" \
+                  -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
+                  -d "{\"url\": \"$(cat /tmp/tunnel_data/tunnel_url.txt)\"}" 2>/dev/null
+                echo "Re-synced."
+              fi
               echo ""
           done ) &
           HEALTH_PID=$!
