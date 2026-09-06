@@ -4,40 +4,34 @@ async def _serve(request, kind):
     viewer = request.headers.get("X-Viewer") or request.remote
     use_user = request.query.get("user") == "1"
 
-    if use_user and not _us_check_auth(request):
-        raise web.HTTPUnauthorized(
-            text="user stream requires authentication",
-            headers={"X-Stream-Auth-Required": "1"},
-        )
-
     if request.method == "HEAD":
         try:
             if use_user:
                 info = await probe_user(cid, mid)
             else:
                 info = await probe(cid, mid)
-        except StreamGone:
-            purge_fid(cid, mid)
-            if use_user:
-                purge_fid_user(cid, mid)
-            if not use_user:
-                raise web.HTTPNotFound(text="file is gone", headers={"X-Stream-Retry": "1"}) from None
-            raise web.HTTPNotFound(text="file is gone") from None
-        except NoClientAvailable as e:
-            if not use_user:
-                raise web.HTTPServiceUnavailable(text=str(e), headers={"X-Stream-Retry": "1"}) from None
-            raise web.HTTPServiceUnavailable(text=str(e)) from None
-        return web.Response(
-            status=200,
-            headers={
-                "Content-Length": str(info["size"]),
-                "Content-Type": info["mime"] or "application/octet-stream",
-                "Accept-Ranges": "bytes",
-                "Content-Disposition": _disposition(info["name"], inline),
-                "Cache-Control": "private, max-age=86400, immutable",
-                "ETag": f'"{info["unique_id"]}"',
-            },
-        )
+            except StreamGone:
+                purge_fid(cid, mid)
+                if use_user:
+                    purge_fid_user(cid, mid)
+                if not use_user:
+                    raise web.HTTPNotFound(text="file is gone", headers={"X-Stream-Retry": "1"}) from None
+                raise web.HTTPNotFound(text="file is gone") from None
+            except NoClientAvailable as e:
+                if not use_user:
+                    raise web.HTTPServiceUnavailable(text=str(e), headers={"X-Stream-Retry": "1"}) from None
+                raise web.HTTPServiceUnavailable(text=str(e)) from None
+            return web.Response(
+                status=200,
+                headers={
+                    "Content-Length": str(info["size"]),
+                    "Content-Type": info["mime"] or "application/octet-stream",
+                    "Accept-Ranges": "bytes",
+                    "Content-Disposition": _disposition(info["name"], inline),
+                    "Cache-Control": "private, max-age=86400, immutable",
+                    "ETag": f'"{info["unique_id"]}"',
+                },
+            )
 
     try:
         if use_user:
