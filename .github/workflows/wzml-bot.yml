@@ -76,8 +76,12 @@ jobs:
           HTML_FILE="$SRC_DIR/web/templates/stream.html"
           python3 "$REPO_ROOT/patches/patch9.py" "$HTML_FILE"
 
-          # ─── Patch 12: no-op (auth removed) ───
+          # ─── Patch 12: Auth token forwarding ───
           python3 "$REPO_ROOT/patches/patch12.py" "$HTML_FILE"
+
+          # ─── Patch 15: bot_settings STREAM_PASS ───
+          BS_FILE="$SRC_DIR/bot/modules/bot_settings.py"
+          python3 "$REPO_ROOT/patches/patch15.py" "$BS_FILE"
 
           # ─── Copy plugins (skip notify.py — used by workflow, not a plugin) ───
           mkdir -p "$SRC_DIR/plugins"
@@ -95,13 +99,16 @@ jobs:
           grep -c "USER_STREAM_PATCHED" "$SRC_DIR/bot/core/stream_server.py" && echo "stream_server user_stream: OK" || echo "stream_server user_stream: NOT FOUND"
           grep -c "USER_STREAM_PATCHED" "$SRC_DIR/web/wserver.py" && echo "wserver user_stream: OK" || echo "wserver user_stream: NOT FOUND"
           grep -c "URLSearchParams" "$HTML_FILE" && echo "Patch 9: OK" || echo "Patch 9: NOT FOUND"
+          grep -c "_streamAuth" "$HTML_FILE" && echo "Patch 12: OK" || echo "Patch 12: NOT FOUND"
+          grep -c "stream_auth" "$SRC_DIR/web/wserver.py" && echo "wserver auth: OK" || echo "wserver auth: NOT FOUND"
           grep -c "STREAM_PASS" "$SRC_DIR/bot/core/config_manager.py" && echo "config STREAM_PASS: OK" || echo "config STREAM_PASS: NOT FOUND"
+          grep -c "STREAM_PASS" "$BS_FILE" && echo "Patch 15: OK" || echo "Patch 15: NOT FOUND"
           grep -c "keeping stable" "$TMON_FILE" && echo "tunnel_monitor: OK" || echo "tunnel_monitor: NOT FOUND"
           python3 -c "import py_compile; py_compile.compile('$TSTREAM_FILE', doraise=True)" && echo "tg_stream.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/stream_server.py', doraise=True)" && echo "stream_server.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/web/wserver.py', doraise=True)" && echo "wserver.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/config_manager.py', doraise=True)" && echo "config_manager.py syntax OK"
-          python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/modules/bot_settings.py', doraise=True)" && echo "bot_settings.py syntax OK"
+          python3 -c "import py_compile; py_compile.compile('$BS_FILE', doraise=True)" && echo "bot_settings.py syntax OK"
 
           cd /tmp/wzml-stable
           docker build -t wzml-bot:stable . 2>&1 | tail -30
