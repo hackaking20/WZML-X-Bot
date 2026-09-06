@@ -1,25 +1,33 @@
 from asyncio import Lock as _SlotLock
+from time import monotonic as _now
 
-_active_streams = 0
+_active_viewers: dict = {}
 _slot_lock = _SlotLock()
+_VIEWER_TIMEOUT = 300  # 5 minutes since last activity = viewer gone
 
-async def _acquire_stream_slot(is_priority=False):
-    global _active_streams
+async def _acquire_stream_slot(is_priority=False, viewer_ip=""):
+    global _active_viewers
     limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
     if is_priority or limit <= 0:
+        if viewer_ip:
+            async with _slot_lock:
+                _active_viewers[viewer_ip] = _now()
         return True
     async with _slot_lock:
-        if _active_streams >= limit:
+        cutoff = _now() - _VIEWER_TIMEOUT
+        stale = [ip for ip, ts in _active_viewers.items() if ts < cutoff]
+        for ip in stale:
+            del _active_viewers[ip]
+        if viewer_ip in _active_viewers:
+            _active_viewers[viewer_ip] = _now()
+            return True
+        if len(_active_viewers) >= limit:
             return False
-        _active_streams += 1
+        _active_viewers[viewer_ip] = _now()
         return True
 
-async def _release_stream_slot(is_priority=False):
-    global _active_streams
-    if is_priority:
-        return
-    async with _slot_lock:
-        _active_streams = max(0, _active_streams - 1)
+async def _release_stream_slot(is_priority=False, viewer_ip=""):
+    pass
 
 def _check_priority(request):
     """Check if request carries a valid priority key."""
@@ -41,18 +49,17 @@ async def _serve(request, kind):
             headers={"X-Stream-Auth-Required": "1"},
         )
 
-    # ── Concurrent stream limiter with priority bypass ──
     is_priority = _check_priority(request)
     _slot_held = False
     if request.method != "HEAD":
-        allowed = await _acquire_stream_slot(is_priority=is_priority)
+        allowed = await _acquire_stream_slot(is_priority=is_priority, viewer_ip=viewer)
         if not allowed:
             limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
             raise web.HTTPServiceUnavailable(
-                text=f"Stream limit reached ({limit} concurrent). Try again later.",
+                text=f"Stream limit reached ({limit} concurrent viewers). Try again later.",
                 headers={"Retry-After": "30", "X-Stream-Limit": str(limit)},
             )
-        _slot_held = not is_priority
+        _slot_held = True
 
     if request.method == "HEAD":
         try:
@@ -105,8 +112,6 @@ async def _serve(request, kind):
     rng = parse_range(request.headers.get("Range"), st.size)
     if rng is None:
         await st._release()
-        if _slot_held:
-            await _release_stream_slot()
         return web.Response(
             status=416,
             headers={
@@ -149,6 +154,4 @@ async def _serve(request, kind):
         LOGGER.error(f"stream failed {cid}/{mid}: {e}")
     finally:
         await gen.aclose()
-        if _slot_held:
-            await _release_stream_slot()
     return resp
