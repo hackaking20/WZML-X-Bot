@@ -4,7 +4,9 @@ user_stream_module.py — standalone module for user-account stream fallback.
 Placed at bot/helper/user_stream_module.py (permanent via UPSTREAM_REPO).
 Imported at startup by patched stream_server.py and wserver.py.
 
-All bug fixes from Claude v3 + v4 reviews applied.
+All bug fixes from Claude v3 + v4 reviews applied, plus v5 audit fixes:
+  - FileMigrate: added migrate counter to prevent infinite DC-bounce loop
+  - _pull: attempt counter reset after each transient error class
 """
 
 from __future__ import annotations
@@ -200,6 +202,7 @@ class UserStream:
         if client is None:
             raise StreamAbort("user: client became None mid-stream")
         refreshes = 0
+        migrates = 0      # FIX: separate counter for FileMigrate to prevent infinite DC-bounce
         attempt = 0
         while True:
             if self.dead:
@@ -236,7 +239,11 @@ class UserStream:
                 self._loc = HypertgTransfer._location(fid)
 
             except FileMigrate as e:
-                LOGGER.info(f"UserStream: file migrate to DC {e.value}")
+                # FIX: guard against infinite DC-bounce (TG bug where file keeps migrating)
+                if migrates >= 3:
+                    raise StreamAbort(f"user: file kept migrating (DC {e.value}), giving up") from None
+                migrates += 1
+                LOGGER.info(f"UserStream: file migrate to DC {e.value} ({migrates}/3)")
                 self._dc = e.value
                 fid = await get_fid_user(self.chat_id, self.msg_id, force=True)
                 self._loc = HypertgTransfer._location(fid)
