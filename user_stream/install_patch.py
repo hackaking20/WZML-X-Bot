@@ -49,7 +49,7 @@ def patch_config(repo):
     f = repo / "bot" / "core" / "config_manager.py"
     content = f.read_text(encoding="utf-8")
     if "PRIORITY_KEY" in content:
-        print("  [skip] config_manager.py already has PRIORITY_KEY")
+        print("  [skip] config_manager.py already has MAX_STREAM_VIEWERS")
         return
     marker = "    DISABLE_STREAM = False\n"
     insertion = (
@@ -87,21 +87,22 @@ def patch_stream_server(repo):
         )
         content = content[:import_end + 1] + new_import + content[import_end + 1:]
 
-    # Replace _serve function
-    old_serve_start = content.find("async def _serve(request, kind):")
-    old_serve_end = content.find("\n\nasync def _stream(")
-    if old_serve_start < 0 or old_serve_end < 0:
-        print("  [ERROR] Could not find _serve function boundaries")
-        return
-    content = content[:old_serve_start] + _NEW_SERVE + content[old_serve_end:]
-
-    # Replace _meta function
+    # Replace _meta function FIRST (before _serve) so that the
+    # \n\nasync def _serve( marker doesn't match the _serve inside _NEW_SERVE
     old_meta_start = content.find("async def _meta(request):")
     old_meta_end = content.find("\n\nasync def _serve(")
     if old_meta_start < 0 or old_meta_end < 0:
         print("  [ERROR] Could not find _meta function boundaries")
         return
     content = content[:old_meta_start] + _NEW_META + content[old_meta_end:]
+
+    # Replace _serve function (after _meta is already gone)
+    old_serve_start = content.find("async def _serve(request, kind):")
+    old_serve_end = content.find("\n\nasync def _stream(")
+    if old_serve_start < 0 or old_serve_end < 0:
+        print("  [ERROR] Could not find _serve function boundaries")
+        return
+    content = content[:old_serve_start] + _NEW_SERVE + content[old_serve_end:]
 
     f.write_text(content, encoding="utf-8")
     print("  [ok] Patched stream_server.py — _serve() and _meta() with ?user=1 routing")
