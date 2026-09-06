@@ -3,19 +3,31 @@ from asyncio import Lock as _SlotLock
 _active_streams = 0
 _slot_lock = _SlotLock()
 
-async def _acquire_stream_slot():
+async def _acquire_stream_slot(is_priority=False):
     global _active_streams
     limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
+    if is_priority or limit <= 0:
+        return True
     async with _slot_lock:
         if _active_streams >= limit:
             return False
         _active_streams += 1
         return True
 
-async def _release_stream_slot():
+async def _release_stream_slot(is_priority=False):
     global _active_streams
+    if is_priority:
+        return
     async with _slot_lock:
         _active_streams = max(0, _active_streams - 1)
+
+def _check_priority(request):
+    """Check if request carries a valid priority key."""
+    key = getattr(Config, "PRIORITY_KEY", "") or ""
+    if not key:
+        return False
+    provided = request.query.get("pkey") or ""
+    return provided == key
 
 async def _serve(request, kind):
     _, cid, mid = await _resolve(request)
@@ -29,18 +41,18 @@ async def _serve(request, kind):
             headers={"X-Stream-Auth-Required": "1"},
         )
 
-    # ── Concurrent stream limiter ──
-    # Only actual streaming (GET) counts — HEAD probes are free
+    # ── Concurrent stream limiter with priority bypass ──
+    is_priority = _check_priority(request)
     _slot_held = False
     if request.method != "HEAD":
-        allowed = await _acquire_stream_slot()
+        allowed = await _acquire_stream_slot(is_priority=is_priority)
         if not allowed:
             limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
             raise web.HTTPServiceUnavailable(
                 text=f"Stream limit reached ({limit} concurrent). Try again later.",
                 headers={"Retry-After": "30", "X-Stream-Limit": str(limit)},
             )
-        _slot_held = True
+        _slot_held = not is_priority
 
     if request.method == "HEAD":
         try:
