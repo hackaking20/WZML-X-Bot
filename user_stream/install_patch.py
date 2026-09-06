@@ -48,8 +48,8 @@ def copy_stall_ui(repo):
 def patch_config(repo):
     f = repo / "bot" / "core" / "config_manager.py"
     content = f.read_text(encoding="utf-8")
-    if "STREAM_PASS" in content:
-        print("  [skip] config_manager.py already has STREAM_PASS")
+    if "MAX_STREAM_VIEWERS" in content:
+        print("  [skip] config_manager.py already has MAX_STREAM_VIEWERS")
         return
     marker = "    DISABLE_STREAM = False\n"
     insertion = (
@@ -57,10 +57,11 @@ def patch_config(repo):
         '    STREAM_PASS = ""\n'
         "    STREAM_DEBUG = False\n"
         "    STREAM_HEALTH_INTERVAL = 1800\n"
+        "    MAX_STREAM_VIEWERS = 3\n"
     )
     content = content.replace(marker, insertion, 1)
     f.write_text(content, encoding="utf-8")
-    print("  [ok] Patched config_manager.py — added STREAM_PASS, STREAM_DEBUG, STREAM_HEALTH_INTERVAL")
+    print("  [ok] Patched config_manager.py — added STREAM_PASS, STREAM_DEBUG, STREAM_HEALTH_INTERVAL, MAX_STREAM_VIEWERS")
 
 
 def patch_stream_server(repo):
@@ -139,7 +140,7 @@ def patch_wserver(repo):
 
     # Replace stream_meta
     old_smeta_start = content.find("async def stream_meta(")
-    old_smeta_end = content.find("\n\n@app.exception_handler")
+    old_smeta_end = content.find('\n\n@app.exception_handler')
     if old_smeta_start < 0 or old_smeta_end < 0:
         print("  [ERROR] Could not find stream_meta boundaries")
         return
@@ -153,7 +154,7 @@ def patch_wserver(repo):
         return
     content = content[:old_xstrm_start] + _NEW_XSTRM + content[old_xstrm_end:]
 
-    # Add /api/stream_auth route + health startup
+    # Add /api/stream_auth route + health startup (auth_route.py now only has these)
     exc_idx = content.find("@app.exception_handler")
     if exc_idx >= 0:
         content = content[:exc_idx] + _AUTH_ROUTE + content[exc_idx:]
@@ -186,7 +187,7 @@ def patch_config_load_dict(repo):
         '        _new_base = getattr(cls, "BASE_URL", "") or ""\n'
         '        if "trycloudflare.com" in _new_base and "trycloudflare.com" not in _current_base and _current_base:\n'
         "            cls.BASE_URL = _current_base\n"
-        '            LOGGER.info(f"config_manager: keeping stable BASE_URL={_current_base}, ignoring MongoDB value={_new_base}")\n'
+        '            LOGGER.info(f"config_manager: keeping stable BASE_URL={_current_base}, ignoring MongoDb value={_new_base}")\n'
     )
 
     content = content[:val_idx] + guard + content[val_idx:]
@@ -194,15 +195,14 @@ def patch_config_load_dict(repo):
     print("  [ok] Patched config_manager.py — BASE_URL guard in load_dict()")
 
 
-# ═════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 # Replacement function bodies (loaded from external files to avoid
 # quoting issues with f-strings inside triple-quoted strings)
-# ═════════════════════════════════════════════════════════════════
+# ──────────────────────────────────────────────────────────────────────────────
 
 def _load_template(name):
     p = Path(__file__).resolve().parent / "patches" / name
     return p.read_text(encoding="utf-8")
-
 
 _NEW_SERVE = None
 _NEW_META = None
