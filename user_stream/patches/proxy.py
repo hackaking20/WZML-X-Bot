@@ -9,12 +9,15 @@ async def stream_proxy(
     auth_val = request.query_params.get("auth")
     if auth_val:
         merged_params["auth"] = auth_val
+    pkey_val = request.query_params.get("pkey")
+    if pkey_val:
+        merged_params["pkey"] = pkey_val
     headers = {}
     rng = request.headers.get("range")
     if rng:
         headers["Range"] = rng
-    if inm := request.headers.get("if-range"):
-        headers["If-Range"] = inm
+    if im := request.headers.get("if-range"):
+        headers["If-Range"] = im
     headers["X-Viewer"] = _client_ip(request)
     try:
         upstream = await http_session.request(
@@ -31,7 +34,7 @@ async def stream_proxy(
     }
     out.setdefault("Accept-Ranges", "bytes")
     out.setdefault("Cache-Control", "private, max-age=86400, immutable")
-    out["Referrer-Policy"] = "no-referrer"
+    out["Referer-Policy"] = "no-referrer"
     out["X-Content-Type-Options"] = "nosniff"
     if request.method == "HEAD" or upstream.status in (204, 304, 416):
         body = await upstream.read()
