@@ -7,14 +7,13 @@ if '_streamAuth' in content:
     print("ALREADY PATCHED stream.html: auth overlay exists")
     sys.exit(0)
 
-# ─── 1. Inject auth overlay CSS + JS right after the <body> tag opening ───
-# Find the first <body ...> tag
+# ─── 1. Inject auth overlay + blocking script right after <body> ───
 body_idx = content.index('<body')
 body_end = content.index('>', body_idx) + 1
 
 AUTH_OVERLAY = """
-<!-- ─── User Stream Auth Overlay ─── -->
-<div id="stream-auth-overlay" style="display:flex;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);backdrop-filter:blur(8px);align-items:center;justify-content:center;">
+<!-- ─── User Stream Auth Overlay (hidden by default) ─── -->
+<div id="stream-auth-overlay" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.92);backdrop-filter:blur(8px);align-items:center;justify-content:center;">
   <div style="background:#1a1a2e;border-radius:12px;padding:28px 32px;max-width:360px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
     <div style="font-size:28px;margin-bottom:6px;">&#128274;</div>
     <div style="color:#e0e0e0;font-size:15px;font-weight:600;margin-bottom:4px;">User Stream Access</div>
@@ -25,17 +24,34 @@ AUTH_OVERLAY = """
   </div>
 </div>
 <script>
-// Synchronous check: hide overlay immediately if NOT user mode or already have token
+// ─── Synchronous page blocker: prevent stream player from loading when auth needed ───
 (function() {
   var isUser = false;
   try { isUser = new URLSearchParams(location.search).get('user') === '1'; }
   catch(e) { isUser = location.search.indexOf('user=1') >= 0; }
   var tok = null;
   try { tok = localStorage.getItem('wzml_stream_auth'); } catch(e) {}
-  if (!isUser || tok) {
-    var el = document.getElementById('stream-auth-overlay');
-    if (el) el.style.display = 'none';
+  var noauth = false;
+  try { noauth = new URLSearchParams(location.search).get('noauth') === '1'; }
+  catch(e) { noauth = location.search.indexOf('noauth=1') >= 0; }
+
+  if (isUser && !tok && !noauth) {
+    // Replace entire page with auth form — stream player never loads
+    document.open();
+    document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>User Stream Access</title><style>*{box-sizing:border-box}body{margin:0;background:#0d0d1a;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui,-apple-system,sans-serif}.box{background:#1a1a2e;border-radius:12px;padding:28px 32px;max-width:360px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5)}.icon{font-size:28px;margin-bottom:6px}.title{color:#e0e0e0;font-size:15px;font-weight:600;margin-bottom:4px}.sub{color:#888;font-size:12px;margin-bottom:18px}input{width:100%;padding:10px 14px;border-radius:8px;border:1px solid #333;background:#0d0d1a;color:#e0e0e0;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:12px}button{width:100%;padding:10px;border-radius:8px;border:none;background:#4a6cf7;color:#fff;font-size:14px;font-weight:600;cursor:pointer}button:disabled{opacity:0.6;cursor:wait}.err{color:#ff6b6b;font-size:12px;margin-top:10px;display:none}</style></head><body><div class="box"><div class="icon">&#128274;</div><div class="title">User Stream Access</div><div class="sub" id="sub-text">Checking...</div><input id="pass" type="password" placeholder="Password" style="display:none" autocomplete="off"><button id="btn" style="display:none">Unlock</button><div class="err" id="err"></div></div><scr'+'ipt>(function(){var sub=document.getElementById("sub-text");var pass=document.getElementById("pass");var btn=document.getElementById("btn");var err=document.getElementById("err");fetch("/api/stream_auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:"check"})}).then(function(r){if(r.status===401){sub.textContent="Enter password to stream via your account";pass.style.display="block";btn.style.display="block";pass.focus()}else{var u=new URL(location.href);u.searchParams.set("noauth","1");location.replace(u.toString())}}).catch(function(){sub.textContent="Network error. Please refresh."});function doLogin(){var p=pass.value;if(!p)return;btn.textContent="Verifying...";btn.disabled=true;fetch("/api/stream_auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:p})}).then(function(r){if(r.status===401){btn.textContent="Unlock";btn.disabled=false;err.textContent="Wrong password. Try again.";err.style.display="block";return null}if(!r.ok){btn.textContent="Unlock";btn.disabled=false;err.textContent="Server error.";err.style.display="block";return null}return r.json()}).then(function(data){if(data&&data.token){try{localStorage.setItem("wzml_stream_auth",data.token)}catch(e){}location.reload()}else{btn.textContent="Unlock";btn.disabled=false}}).catch(function(e){btn.textContent="Unlock";btn.disabled=false;err.textContent="Network error: "+e.message;err.style.display="block"})}btn.addEventListener("click",function(e){e.preventDefault();doLogin()});pass.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doLogin()}})})();</scr'+'ipt></body></html>');
+    document.close();
+    return;
   }
+  // Not user mode, has token, or noauth flag — hide overlay, let page load
+  if (noauth) {
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete('noauth');
+      history.replaceState({}, '', u.toString());
+    } catch(e) {}
+  }
+  var el = document.getElementById('stream-auth-overlay');
+  if (el) el.style.display = 'none';
 })();
 </script>
 <script>
@@ -44,7 +60,6 @@ AUTH_OVERLAY = """
     LS_KEY: 'wzml_stream_auth',
     token: null,
     overlay: null,
-    needsAuth: false,
     resolved: false,
 
     getToken: function() {
@@ -84,64 +99,6 @@ AUTH_OVERLAY = """
       if (this.overlay) this.overlay.style.display = 'none';
     },
 
-    doLogin: function() {
-      var pass = document.getElementById('stream-auth-pass').value;
-      if (!pass) return;
-      var btn = document.getElementById('stream-auth-btn');
-      btn.textContent = 'Verifying...';
-      btn.disabled = true;
-      fetch('/api/stream_auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: pass })
-      }).then(function(r) {
-        if (r.status === 401) {
-          btn.textContent = 'Unlock';
-          btn.disabled = false;
-          var err = document.getElementById('stream-auth-err');
-          err.textContent = 'Wrong password. Try again.';
-          err.style.display = 'block';
-          return null;
-        }
-        if (!r.ok) {
-          btn.textContent = 'Unlock';
-          btn.disabled = false;
-          var err = document.getElementById('stream-auth-err');
-          err.textContent = 'Server error. User stream may not be configured.';
-          err.style.display = 'block';
-          return null;
-        }
-        return r.json();
-      }).then(function(data) {
-        if (data && data.token) {
-          _streamAuth.setToken(data.token);
-          _streamAuth.hideOverlay();
-          _streamAuth.resolved = true;
-          location.reload();
-        } else {
-          btn.textContent = 'Unlock';
-          btn.disabled = false;
-        }
-      }).catch(function(e) {
-        btn.textContent = 'Unlock';
-        btn.disabled = false;
-        var err = document.getElementById('stream-auth-err');
-        err.textContent = 'Network error: ' + e.message;
-        err.style.display = 'block';
-      });
-    },
-
-    ensureAuth: function() {
-      if (!this.isUserMode()) { this.resolved = true; return true; }
-      var t = this.getToken();
-      if (t) {
-        this.resolved = true;
-        return true;
-      }
-      this.showOverlay();
-      return false;
-    },
-
     getAuthParam: function() {
       var t = this.getToken();
       if (!t || !this.isUserMode()) return '';
@@ -159,33 +116,7 @@ AUTH_OVERLAY = """
       document.addEventListener('DOMContentLoaded', function() {
         var btn = document.getElementById('stream-auth-btn');
         if (btn) {
-          btn.addEventListener('click', function(e) { e.preventDefault(); self.doLogin(); });
-        }
-        var inp = document.getElementById('stream-auth-pass');
-        if (inp) {
-          inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); self.doLogin(); } });
-        }
-        // Overlay is already visible from first paint (display:flex).
-        // Now check if STREAM_PASS is actually configured.
-        if (self.isUserMode() && !self.getToken()) {
-          // Overlay is showing — check backend
-          fetch('/api/stream_auth', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: 'check' })
-          }).then(function(r) {
-            if (r.status === 401) {
-              // STREAM_PASS is set — keep overlay, focus input
-              self.showOverlay();
-            } else {
-              // STREAM_PASS not set — hide overlay, let stream load
-              self.resolved = true;
-              self.hideOverlay();
-            }
-          }).catch(function() {
-            // Network error — keep overlay as fallback
-            self.showOverlay();
-          });
+          btn.addEventListener('click', function(e) { e.preventDefault(); self.showOverlay(); });
         }
       });
     }
@@ -221,12 +152,7 @@ new_switch = """function _switchToUser() {
             }"""
 content = content.replace(old_switch, new_switch, 1)
 
-# ─── 3. Patch the meta fetch to include auth token ───
-old_meta_fetch = 'fetch("/api/stream/" + encodeURIComponent(TOKEN) + _userQ, {'
-new_meta_fetch = 'fetch("/api/stream/" + encodeURIComponent(TOKEN) + _userQ, {'
-content = content.replace(old_meta_fetch, new_meta_fetch, 1)
-
-# ─── 4. Patch the stream URL to include auth token ───
+# ─── 3. Patch the stream URL to include auth token ───
 old_stream = 'var _userQ = location.search || ""; var STREAM = location.origin + "/stream/" +'
 new_stream = """var _userQ = location.search || "";
           var _authTok = _streamAuth.getToken();
@@ -236,8 +162,7 @@ new_stream = """var _userQ = location.search || "";
           var STREAM = location.origin + "/stream/" +"""
 content = content.replace(old_stream, new_stream, 1)
 
-# ─── 5. Patch smartStreamCheck fetch to include auth ───
-old_check_fetch = 'fetch("/api/stream/" + encodeURIComponent(TOKEN) + _userQ, {'
+# ─── 4. Patch all fetch calls that use _userQ to include auth param ───
 import re
 fetches_with_userq = [(m.start(), m.group()) for m in re.finditer(r'fetch\([^)]*_userQ[^)]*\)', content)]
 for pos, match in fetches_with_userq:
@@ -246,21 +171,14 @@ for pos, match in fetches_with_userq:
         new_f = match.replace('_userQ', '_userQ + _streamAuth.getAuthParam()')
         content = content[:pos] + new_f + content[pos + len(match):]
 
-# ─── 6. Patch the 401/403 error handling to show auth overlay ───
-old_ssc_check = 'function smartStreamCheck() {'
-if old_ssc_check in content:
-    new_ssc_start = """function smartStreamCheck() {"""
-    content = content.replace(old_ssc_check, new_ssc_start, 1)
-
-# ─── 7. Handle 401 responses from stream endpoints ───
+# ─── 5. Handle 401 responses from stream endpoints ───
 old_catch_block = 'if (new URLSearchParams(location.search).get("user") === "1") {'
 new_catch_block = """if (_streamAuth.isUserMode()) {
-                    var _t = _streamAuth.getToken();
-                    if (!_t) {
-                        _streamAuth.showOverlay('Authentication required');
-                    } else {
-                        location.reload();
-                    }
+                    _streamAuth.clearToken();
+                    var u = new URL(location.href);
+                    u.searchParams.delete('noauth');
+                    u.searchParams.delete('auth');
+                    location.replace(u.toString());
                     return;
                 }
                 if (new URLSearchParams(location.search).get("user") === "1") {"""
@@ -269,4 +187,4 @@ content = content.replace(old_catch_block, new_catch_block, 1)
 with open(sys.argv[1], 'w') as f:
     f.write(content)
 
-print("PATCHED stream.html: auth overlay (visible-by-default) + sync-hide + async-check + token forwarding")
+print("PATCHED stream.html: document.write page blocking + async auth check + token forwarding")
