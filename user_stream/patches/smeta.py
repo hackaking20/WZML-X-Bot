@@ -7,6 +7,9 @@ async def stream_meta(token: str, request: Request):
     auth_val = request.query_params.get("auth")
     if auth_val:
         meta_params["auth"] = auth_val
+    pkey_val = request.query_params.get("pkey")
+    if pkey_val:
+        meta_params["pkey"] = pkey_val
     try:
         async with http_session.get(
             f"{STREAM_BASE}/_meta/{token}", params=meta_params or None
