@@ -48,8 +48,10 @@ def copy_stall_ui(repo):
 def patch_config(repo):
     f = repo / "bot" / "core" / "config_manager.py"
     content = f.read_text(encoding="utf-8")
-    if "PRIORITY_KEY" in content:
-        print("  [skip] config_manager.py already has MAX_STREAM_VIEWERS")
+    # FIX: Use STREAM_PASS as idempotency sentinel (more specific than PRIORITY_KEY
+    # which upstream could theoretically add for unrelated reasons).
+    if "STREAM_PASS" in content:
+        print("  [skip] config_manager.py already has STREAM_PASS")
         return
     marker = "    DISABLE_STREAM = False\n"
     insertion = (
@@ -123,9 +125,7 @@ def patch_wserver(repo):
             "\nfrom bot.helper.user_stream_module import ("
             "\n    _get_stream_pass as _us_get_pass,"
             "\n    _sign_token as _us_sign,"
-            "\n    _verify_token as _us_verify,"
             "\n    start_health_check as _us_start_health,"
-            "\n    get_last_result as _us_health_result,"
             "\n)"
             "\nimport hmac as _us_hmac"
             "\n# USER_STREAM_PATCHED"
@@ -183,10 +183,13 @@ def patch_config_load_dict(repo):
         print("  [WARN] Could not find validation block in load_dict")
         return
 
+    # FIX: _new_base must read from config_dict (the incoming MongoDB value),
+    # NOT from cls.BASE_URL (which is the same as _current_base — making the
+    # condition always False and the guard permanently dead).
     guard = (
         "        # USER_STREAM_BASEURL_GUARD\n"
         '        _current_base = getattr(cls, "BASE_URL", "") or ""\n'
-        '        _new_base = getattr(cls, "BASE_URL", "") or ""\n'
+        '        _new_base = config_dict.get("BASE_URL", "") or ""\n'
         '        if "trycloudflare.com" in _new_base and "trycloudflare.com" not in _current_base and _current_base:\n'
         "            cls.BASE_URL = _current_base\n"
         '            LOGGER.info(f"config_manager: keeping stable BASE_URL={_current_base}, ignoring MongoDb value={_new_base}")\n'
@@ -194,7 +197,7 @@ def patch_config_load_dict(repo):
 
     content = content[:val_idx] + guard + content[val_idx:]
     f.write_text(content, encoding="utf-8")
-    print("  [ok] Patched config_manager.py — BASE_URL guard in load_dict()")
+    print("  [ok] Patched config_manager.py — BASE_URL guard in load_dict() (fixed: reads config_dict not cls)")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
