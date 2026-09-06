@@ -152,7 +152,23 @@ AUTH_OVERLAY = """
           inp.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); self.doLogin(); } });
         }
         if (self.isUserMode() && !self.getToken()) {
-          self.showOverlay();
+          // Check if STREAM_PASS is actually configured before showing overlay
+          fetch('/api/stream_auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: 'check' })
+          }).then(function(r) {
+            if (r.status === 401) {
+              // STREAM_PASS is set, show password overlay
+              self.showOverlay();
+            } else {
+              // STREAM_PASS not set (200 with error), no auth needed
+              self.resolved = true;
+            }
+          }).catch(function() {
+            // Network error, show overlay as fallback
+            self.showOverlay();
+          });
         }
       });
     }
@@ -189,18 +205,12 @@ new_switch = """function _switchToUser() {
 content = content.replace(old_switch, new_switch, 1)
 
 # ─── 3. Patch the meta fetch to include auth token ───
-# The meta fetch is: fetch("/api/stream/" + encodeURIComponent(TOKEN) + _userQ, ...)
-# We need to append &auth=TOKEN if in user mode
 old_meta_fetch = 'fetch("/api/stream/" + encodeURIComponent(TOKEN) + _userQ, {'
 new_meta_fetch = 'fetch("/api/stream/" + encodeURIComponent(TOKEN) + _userQ, {'
 content = content.replace(old_meta_fetch, new_meta_fetch, 1)
 
 # ─── 4. Patch the stream URL to include auth token ───
-# The STREAM var builds the stream URL. Find where _userQ is used in the STREAM assignment.
 old_stream = 'var _userQ = location.search || ""; var STREAM = location.origin + "/stream/" +'
-# We need to make sure the auth token is included when building the stream URL
-# Since the browser media player constructs requests from the STREAM var,
-# we need the auth param baked into the URL
 new_stream = """var _userQ = location.search || "";
           var _authTok = _streamAuth.getToken();
           if (_authTok && _userQ.indexOf("user=1") >= 0 && _userQ.indexOf("auth=") < 0) {
@@ -210,14 +220,7 @@ new_stream = """var _userQ = location.search || "";
 content = content.replace(old_stream, new_stream, 1)
 
 # ─── 5. Patch smartStreamCheck fetch to include auth ───
-# smartStreamCheck does a GET to the stream URL to check status
 old_check_fetch = 'fetch("/api/stream/" + encodeURIComponent(TOKEN) + _userQ, {'
-# This was already patched in step 3, but if smartStreamCheck uses a different URL pattern...
-# Let's also handle the case where smartStreamCheck builds its own URL
-# Check if there's a direct fetch to /stream/ in smartStreamCheck
-# The smartStreamCheck function likely does:
-#   fetch(STREAM + ...) or fetch("/api/stream/..." + TOKEN + ...)
-# Let me find all fetch calls that use _userQ
 import re
 fetches_with_userq = [(m.start(), m.group()) for m in re.finditer(r'fetch\([^)]*_userQ[^)]*\)', content)]
 for pos, match in fetches_with_userq:
@@ -227,16 +230,12 @@ for pos, match in fetches_with_userq:
         content = content[:pos] + new_f + content[pos + len(match):]
 
 # ─── 6. Patch the 401/403 error handling to show auth overlay ───
-# When the stream returns 401 (auth required), show the overlay
-# Find the smartStreamCheck response handling
 old_ssc_check = 'function smartStreamCheck() {'
 if old_ssc_check in content:
-    # Insert auth check at the beginning of smartStreamCheck
     new_ssc_start = """function smartStreamCheck() {"""
     content = content.replace(old_ssc_check, new_ssc_start, 1)
 
 # ─── 7. Handle 401 responses from stream endpoints ───
-# In the fetch catch/error handlers, check for 401 status
 old_catch_block = 'if (new URLSearchParams(location.search).get("user") === "1") {'
 new_catch_block = """if (_streamAuth.isUserMode()) {
                     var _t = _streamAuth.getToken();
@@ -253,4 +252,4 @@ content = content.replace(old_catch_block, new_catch_block, 1)
 with open(sys.argv[1], 'w') as f:
     f.write(content)
 
-print("PATCHED stream.html: auth overlay + localStorage token + auth param forwarding")
+print("PATCHED stream.html: auth overlay + localStorage token + auth param forwarding + skip-when-no-pass")
