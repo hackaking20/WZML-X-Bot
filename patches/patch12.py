@@ -117,7 +117,7 @@ new_catch_block = """if (_streamAuth.isUserMode()) {
                 if (new URLSearchParams(location.search).get("user") === "1") {"""
 content = content.replace(old_catch_block, new_catch_block, 1)
 
-with open(sys.argv[1], 'w') as as f:
+with open(sys.argv[1], 'w') as f:
     f.write(content)
 
 print("PATCHED stream.html: token forwarding only (auth handled by Worker)")
