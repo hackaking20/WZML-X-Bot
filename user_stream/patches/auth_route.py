@@ -1,4 +1,7 @@
 
+@app.get("/health")
+async def health_check():
+    return {"bot_responding": True, "status": "ok"}
 
 @app.post("/api/stream_auth")
 async def stream_auth_endpoint(request: Request):
