@@ -160,6 +160,9 @@ jobs:
           fi
           mkdir -p /tmp/tunnel_data
           echo -n "$TUNNEL_URL" > /tmp/tunnel_data/tunnel_url.txt
+          # Save worker creds for watchdog
+          echo "$TARGET_WORKER" > /tmp/tunnel_data/worker_url.txt
+          echo "$WORKER_SECRET" > /tmp/tunnel_data/worker_secret.txt
 
       - name: Launch Bot
         env:
@@ -237,18 +240,82 @@ jobs:
           # ─── Send startup notification ───
           python3 "${GITHUB_WORKSPACE:-$PWD}/notify.py" startup "${BOT_TOKEN}" "${OWNER_ID}" "${NTFY_TOPIC}" "${TARGET_URL}"
 
-          # ─── Stream logs until timeout ───
+          # ─── Tunnel watchdog + health check loop ───
+          # Checks every 2 minutes:
+          # 1. Is cloudflared process alive? If not, restart it.
+          # 2. Is the tunnel URL reachable? If not, restart cloudflared.
+          # 3. Is the Worker health OK? If not, re-sync tunnel.
           ( while true; do
-              sleep 300
-              echo "--- Health check at $(date) ---"
-              HEALTH=$(curl -s "${TARGET_URL}/health" 2>/dev/null || echo "health check failed")
-              echo "$HEALTH"
-              # Re-sync tunnel if Worker lost it
+              sleep 120
+              echo "--- Watchdog check at $(date) ---"
+
+              CURRENT_URL=$(cat /tmp/tunnel_data/tunnel_url.txt 2>/dev/null || echo "")
+              W_URL=$(cat /tmp/tunnel_data/worker_url.txt 2>/dev/null || echo "$TARGET_URL")
+              W_SECRET=$(cat /tmp/tunnel_data/worker_secret.txt 2>/dev/null || echo "$WORKER_SECRET")
+
+              # Check 1: Is cloudflared process alive?
+              if ! pgrep -x cloudflared > /dev/null 2>&1; then
+                echo ">>> WATCHDOG: cloudflared process dead! Restarting..."
+                /tmp/cloudflared tunnel --url http://localhost:8080 > /tmp/tunnel.log 2>&1 &
+                NEW_URL=""
+                for i in {1..20}; do
+                  sleep 2
+                  NEW_URL=$(grep -o 'https://[-a-zA-Z0-9]*\.trycloudflare\.com' /tmp/tunnel.log | head -n 1)
+                  if [ -n "$NEW_URL" ]; then break; fi
+                done
+                if [ -n "$NEW_URL" ]; then
+                  echo ">>> WATCHDOG: New tunnel established: $NEW_URL"
+                  echo -n "$NEW_URL" > /tmp/tunnel_data/tunnel_url.txt
+                  curl -s -X POST "${W_URL}/update-tunnel" \
+                    -H "Content-Type: application/json" \
+                    -H "X-Tunnel-Secret: ${W_SECRET}" \
+                    -d "{\"url\": \"${NEW_URL}\"}" 2>/dev/null
+                  echo ">>> WATCHDOG: New tunnel synced to Worker"
+                else
+                  echo ">>> WATCHDOG: Failed to establish new tunnel!"
+                  cat /tmp/tunnel.log
+                fi
+                continue
+              fi
+
+              # Check 2: Is the tunnel URL actually reachable? (not just process alive)
+              if [ -n "$CURRENT_URL" ]; then
+                TUNNEL_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${CURRENT_URL}/health" 2>/dev/null || echo "000")
+                if [ "$TUNNEL_STATUS" = "000" ] || [ "$TUNNEL_STATUS" = "502" ] || [ "$TUNNEL_STATUS" = "524" ]; then
+                  echo ">>> WATCHDOG: Tunnel unreachable (status $TUNNEL_STATUS)! Restarting cloudflared..."
+                  pkill -f cloudflared 2>/dev/null || true
+                  sleep 3
+                  /tmp/cloudflared tunnel --url http://localhost:8080 > /tmp/tunnel.log 2>&1 &
+                  NEW_URL=""
+                  for i in {1..20}; do
+                    sleep 2
+                    NEW_URL=$(grep -o 'https://[-a-zA-Z0-9]*\.trycloudflare\.com' /tmp/tunnel.log | head -n 1)
+                    if [ -n "$NEW_URL" ]; then break; fi
+                  done
+                  if [ -n "$NEW_URL" ]; then
+                    echo ">>> WATCHDOG: New tunnel established: $NEW_URL"
+                    echo -n "$NEW_URL" > /tmp/tunnel_data/tunnel_url.txt
+                    curl -s -X POST "${W_URL}/update-tunnel" \
+                      -H "Content-Type: application/json" \
+                      -H "X-Tunnel-Secret: ${W_SECRET}" \
+                      -d "{\"url\": \"${NEW_URL}\"}" 2>/dev/null
+                    echo ">>> WATCHDOG: New tunnel synced to Worker"
+                  else
+                    echo ">>> WATCHDOG: Failed to establish new tunnel!"
+                    cat /tmp/tunnel.log
+                  fi
+                  continue
+                fi
+              fi
+
+              # Check 3: Worker health
+              HEALTH=$(curl -s "${W_URL}/health" 2>/dev/null || echo "health check failed")
+              echo "Worker health: $HEALTH"
               if echo "$HEALTH" | grep -q 'no tunnel registered'; then
-                echo ">>> Tunnel lost! Re-syncing to Worker..."
-                curl -s -X POST "${TARGET_URL}/update-tunnel" \
+                echo ">>> WATCHDOG: Worker lost tunnel! Re-syncing..."
+                curl -s -X POST "${W_URL}/update-tunnel" \
                   -H "Content-Type: application/json" \
-                  -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
+                  -H "X-Tunnel-Secret: ${W_SECRET}" \
                   -d "{\"url\": \"$(cat /tmp/tunnel_data/tunnel_url.txt)\"}" 2>/dev/null
                 echo "Re-synced."
               fi
