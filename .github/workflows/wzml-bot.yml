@@ -196,7 +196,7 @@ jobs:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
           RUN_HOURS: ${{ github.event.inputs.hours || '5' }}
-          NTFY_TOPIC: ${{ secret.NTFY_TOPIC || 'JAI_HO' }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
         shell: bash {0}
         run: |
           TARGET_URL="${WORKER_URL%/}"
