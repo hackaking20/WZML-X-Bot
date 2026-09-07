@@ -130,12 +130,12 @@ jobs:
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/web/wserver.py', doraise=True)" && echo "wserver.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$BS_FILE', doraise=True)" && echo "bot_settings.py syntax OK"
 
-           cd /tmp/wzml-stable
+          cd /tmp/wzml-stable
           docker build -t wzml-bot:stable . 2>&1 | tail -30
 
       - name: Start Cloudflare Tunnel and sync to Worker
         env:
-           WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
         shell: bash {0}
         run: |
@@ -316,9 +316,9 @@ jobs:
                     echo ">>> WATCHDOG: New tunnel established: $NEW_URL"
                     echo -n "$NEW_URL" > /tmp/tunnel_data/tunnel_url.txt
                     curl -s -X POST "${W_URL}/update-tunnel" \
-                       -H "Content-Type: application/json" \
+                      -H "Content-Type: application/json" \
                       -H "X-Tunnel-Secret: ${W_SECRET}" \
-                     -d "{\"url\": \"${NEW_URL}\"}" 2>/dev/null
+                      -d "{\"url\": \"${NEW_URL}\"}" 2>/dev/null
                     echo ">>> WATCHDOG: New tunnel synced to Worker"
                   else
                     echo ">>> WATCHDOG: Failed to establish new tunnel!"
@@ -341,7 +341,7 @@ jobs:
               fi
               echo ""
             done ) &
-           HEALTH_PID=$!
+          HEALTH_PID=$!
 
           timeout "$TOTAL_SEC" docker logs -f wzml_bot || true
           kill $HEALTH_PID 2>/dev/null || true
