@@ -1,65 +1,8 @@
-from asyncio import Lock as _SlotLock
-from time import monotonic as _now
-
-_active_viewers: dict = {}
-_slot_lock = _SlotLock()
-_VIEWER_TIMEOUT = 300  # 5 minutes since last activity = viewer gone
-
-async def _acquire_stream_slot(is_priority=False, viewer_ip=""):
-    global _active_viewers
-    limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
-    if is_priority or limit <= 0:
-        if viewer_ip:
-            async with _slot_lock:
-                _active_viewers[viewer_ip] = _now()
-        return True
-    async with _slot_lock:
-        cutoff = _now() - _VIEWER_TIMEOUT
-        stale = [ip for ip, ts in _active_viewers.items() if ts < cutoff]
-        for ip in stale:
-            del _active_viewers[ip]
-        if viewer_ip in _active_viewers:
-            _active_viewers[viewer_ip] = _now()
-            return True
-        if len(_active_viewers) >= limit:
-            return False
-        _active_viewers[viewer_ip] = _now()
-        return True
-
-async def _release_stream_slot(is_priority=False, viewer_ip=""):
-    pass
-
-def _check_priority(request):
-    """Check if request carries a valid priority key."""
-    key = getattr(Config, "PRIORITY_KEY", "") or ""
-    if not key:
-        return False
-    provided = request.query.get("pkey") or ""
-    return provided == key
-
 async def _serve(request, kind):
     _, cid, mid = await _resolve(request)
     inline = kind == "playback"
     viewer = request.headers.get("X-Viewer") or request.remote
     use_user = request.query.get("user") == "1"
-
-    if use_user and not _us_check_auth(request):
-        raise web.HTTPUnauthorized(
-            text="user stream requires authentication",
-            headers={"X-Stream-Auth-Required": "1"},
-        )
-
-    is_priority = _check_priority(request)
-    _slot_held = False
-    if request.method != "HEAD":
-        allowed = await _acquire_stream_slot(is_priority=is_priority, viewer_ip=viewer)
-        if not allowed:
-            limit = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
-            raise web.HTTPServiceUnavailable(
-                text=f"Stream limit reached ({limit} concurrent viewers). Try again later.",
-                headers={"Retry-After": "30", "X-Stream-Limit": str(limit)},
-            )
-        _slot_held = True
 
     if request.method == "HEAD":
         try:
