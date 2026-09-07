@@ -391,6 +391,37 @@ def check_auth(request) -> bool:
     return _verify_token(token, password)
 
 
+# ─── WORKER CONFIG SYNC ──────────────────────────────────────────
+
+import os as _os
+
+
+async def sync_config_to_worker():
+    """Push STREAM_PASS, MAX_STREAM_VIEWERS, PRIORITY_KEY from bot config to Worker KV."""
+    worker_url = getattr(Config, "BASE_URL", "") or ""
+    if not worker_url or "trycloudflare" in worker_url:
+        return
+    worker_secret = _os.environ.get("WORKER_SECRET", "") or ""
+    if not worker_secret:
+        LOGGER.warning("sync_config: WORKER_SECRET env not set, skipping")
+        return
+    session = await _get_session()
+    headers = {"X-Tunnel-Secret": worker_secret, "Content-Type": "application/json"}
+    base = worker_url.rstrip("/")
+
+    stream_pass = getattr(Config, "STREAM_PASS", "") or ""
+    max_viewers = int(getattr(Config, "MAX_STREAM_VIEWERS", 3) or 3)
+    priority_key = getattr(Config, "PRIORITY_KEY", "") or ""
+
+    try:
+        await session.post(f"{base}/set-pass", headers=headers, json={"password": stream_pass}, timeout=_aiohttp_timeout(10))
+        await session.post(f"{base}/set-limit", headers=headers, json={"limit": max_viewers}, timeout=_aiohttp_timeout(10))
+        await session.post(f"{base}/set-priority", headers=headers, json={"key": priority_key}, timeout=_aiohttp_timeout(10))
+        LOGGER.info(f"sync_config: pushed to Worker (pass={'set' if stream_pass else 'empty'}, limit={max_viewers}, priority={'set' if priority_key else 'empty'})")
+    except Exception as e:
+        LOGGER.warning(f"sync_config: failed — {type(e).__name__}: {e}")
+
+
 # ─── HEALTH CHECK ─────────────────────────────────────────────────
 
 _health_task = None
@@ -468,6 +499,7 @@ async def _health_loop():
     LOGGER.info(f"Health check loop started (interval={interval}s)")
     while True:
         try:
+            await sync_config_to_worker()
             await do_health_check()
         except Exception as e:
             LOGGER.error(f"Health loop error: {e}")
@@ -478,6 +510,7 @@ def start_health_check():
     global _health_task
     if _health_task is not None and not _health_task.done():
         return
+    bot_loop.create_task(sync_config_to_worker())
     _health_task = bot_loop.create_task(_health_loop())
 
 
