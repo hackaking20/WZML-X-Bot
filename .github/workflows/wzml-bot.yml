@@ -82,6 +82,13 @@ jobs:
           # ─── Patch 16: Fix download button for user account ───
           python3 "$REPO_ROOT/patches/patch16.py" "$HTML_FILE"
 
+          # ─── Patch 17: Theme system for stream.html ───
+          python3 "$REPO_ROOT/patches/patch17.py" "$HTML_FILE"
+
+          # ─── Patch 18: Theme system for landing.html ───
+          LANDING_FILE="$SRC_DIR/web/templates/landing.html"
+          python3 "$REPO_ROOT/patches/patch18.py" "$LANDING_FILE"
+
           # ─── Patch 15: bot_settings STREAM_PASS ───
           BS_FILE="$SRC_DIR/bot/modules/bot_settings.py"
           python3 "$REPO_ROOT/patches/patch15.py" "$BS_FILE"
@@ -107,6 +114,8 @@ jobs:
           grep -c "STREAM_PASS" "$SRC_DIR/bot/core/config_manager.py" && echo "config STREAM_PASS: OK" || echo "config STREAM_PASS: NOT FOUND"
           grep -c "STREAM_PASS" "$BS_FILE" && echo "Patch 15: OK" || echo "Patch 15: NOT FOUND"
           grep -c "DIRECT.*_userQ" "$HTML_FILE" && echo "Patch 16: OK" || echo "Patch 16: NOT FOUND"
+          grep -c "wzml-theme-style" "$HTML_FILE" && echo "Patch 17: OK" || echo "Patch 17: NOT FOUND"
+          grep -c "wzml-theme-style" "$LANDING_FILE" && echo "Patch 18: OK" || echo "Patch 18: NOT FOUND"
           grep -c "keeping stable" "$TMON_FILE" && echo "tunnel_monitor: OK" || echo "tunnel_monitor: NOT FOUND"
           python3 -c "import py_compile; py_compile.compile('$TSTREAM_FILE', doraise=True)" && echo "tg_stream.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/stream_server.py', doraise=True)" && echo "stream_server.py syntax OK"
