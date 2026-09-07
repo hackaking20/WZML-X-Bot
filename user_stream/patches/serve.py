@@ -4,6 +4,45 @@ async def _serve(request, kind):
     viewer = request.headers.get("X-Viewer") or request.remote
     use_user = request.query.get("user") == "1"
 
+    def _retry_url():
+        p, qs = request.path, request.query_string
+        if not qs:
+            return p + "?user=1"
+        if "user=" in qs:
+            return p + "?" + qs
+        return p + "?" + qs + "&user=1"
+
+    def _dl_error_html(title, msg):
+        return web.Response(
+            text=(
+                '<!DOCTYPE html><html><head><meta charset="UTF-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+                '<title>' + title + ' &mdash; WZML-X</title>'
+                '<style>'
+                '*{box-sizing:border-box;margin:0;padding:0}'
+                'body{background:#0a0a0a;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;'
+                'display:flex;align-items:center;justify-content:center;min-height:100vh}'
+                '.box{text-align:center;max-width:420px;padding:32px 24px}'
+                '.box h2{color:#ff6b6b;font-size:20px;margin-bottom:10px}'
+                '.box p{color:#888;font-size:14px;line-height:1.5;margin-bottom:24px}'
+                '.btn{display:inline-block;padding:12px 28px;border-radius:8px;text-decoration:none;'
+                'font-weight:600;font-size:14px;transition:all .2s}'
+                '.btn-retry{background:rgba(255,165,0,.12);border:1px solid rgba(255,165,0,.4);color:#ffa500}'
+                '.btn-retry:hover{background:rgba(255,165,0,.22)}'
+                '.btn-back{background:rgba(93,157,255,.12);border:1px solid rgba(93,157,255,.4);color:#5b9dff;margin-top:12px}'
+                '.btn-back:hover{background:rgba(93,157,255,.22)}'
+                '</style></head><body><div class="box">'
+                '<h2>&#9888; ' + title + '</h2>'
+                '<p>' + msg + '</p>'
+                '<a class="btn btn-retry" href="' + _retry_url() + '">Download with user account (Risky)</a>'
+                '<br><a class="btn btn-back" href="/">Back to WZML-X</a>'
+                '</div></body></html>'
+            ),
+            content_type="text/html",
+            status=404,
+            headers={"Cache-Control": "no-store"},
+        )
+
     if request.method == "HEAD":
         try:
             if use_user:
@@ -14,13 +53,9 @@ async def _serve(request, kind):
             purge_fid(cid, mid)
             if use_user:
                 purge_fid_user(cid, mid)
-            if not use_user:
-                raise web.HTTPNotFound(text="file is gone", headers={"X-Stream-Retry": "1"}) from None
             raise web.HTTPNotFound(text="file is gone") from None
         except NoClientAvailable as e:
-            if not use_user:
-                raise web.HTTPServiceUnavailable(text=str(e), headers={"X-Stream-Retry": "1"}) from None
-            raise web.HTTPServiceUnavailable(text=str(e)) from None
+            raise web.HTTPServiceUnavailable(text=str(e), headers={"Retry-After": "10"}) from None
         return web.Response(
             status=200,
             headers={
@@ -42,12 +77,12 @@ async def _serve(request, kind):
         purge_fid(cid, mid)
         if use_user:
             purge_fid_user(cid, mid)
-        if not use_user:
-            raise web.HTTPNotFound(text="file is gone", headers={"X-Stream-Retry": "1"}) from None
+        if not use_user and not inline:
+            return _dl_error_html("File is gone", "The file is no longer available via the bot account. You can try downloading it with your personal Telegram account.")
         raise web.HTTPNotFound(text="file is gone") from None
     except NoClientAvailable as e:
-        if not use_user:
-            raise web.HTTPServiceUnavailable(text=str(e), headers={"Retry-After": "10", "X-Stream-Retry": "1"}) from None
+        if not use_user and not inline:
+            return _dl_error_html("No bot available", "No bot client is currently available to serve this file. You can try downloading it with your personal Telegram account.")
         raise web.HTTPServiceUnavailable(text=str(e), headers={"Retry-After": "10"}) from None
     except StreamAbort as e:
         raise web.HTTPBadGateway(text=str(e)) from None
