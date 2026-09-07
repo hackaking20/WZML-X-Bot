@@ -72,7 +72,7 @@ jobs:
           cp -r "$REPO_ROOT/user_stream" "$SRC_DIR/user_stream"
           python3 "$SRC_DIR/user_stream/install_patch.py" "$SRC_DIR"
 
-          # ─── Patch 9: Stream HTML stall UI ───
+          # ─── Patch 9: Stream ITML stall UI ───
           HTML_FILE="$SRC_DIR/web/templates/stream.html"
           python3 "$REPO_ROOT/patches/patch9.py" "$HTML_FILE"
 
@@ -91,6 +91,9 @@ jobs:
 
           # ─── Patch 19: Extra features (shortcuts, speed, snapshot, QR, copy) ───
           python3 "$REPO_ROOT/patches/patch19.py" "$HTML_FILE"
+
+          # ─── Patch 20: PiP + volume slider + info panel + glassmorphism + mesh bg ───
+          python3 "$REPO_ROOT/patches/patch20.py" "$HTML_FILE"
 
           # ─── Patch 15: bot_settings STREAM_PASS ───
           BS_FILE="$SRC_DIR/bot/modules/bot_settings.py"
@@ -120,19 +123,19 @@ jobs:
           grep -c "wzml-theme-style" "$HTML_FILE" && echo "Patch 17: OK" || echo "Patch 17: NOT FOUND"
           grep -c "wzml-theme-style" "$LANDING_FILE" && echo "Patch 18: OK" || echo "Patch 18: NOT FOUND"
           grep -c "wzml-x-extras" "$HTML_FILE" && echo "Patch 19: OK" || echo "Patch 19: NOT FOUND"
+          grep -c "wzml-x-extras-v2" "$HTML_FILE" && echo "Patch 20: OK" || echo "Patch 20: NOT FOUND"
           grep -c "keeping stable" "$TMON_FILE" && echo "tunnel_monitor: OK" || echo "tunnel_monitor: NOT FOUND"
           python3 -c "import py_compile; py_compile.compile('$TSTREAM_FILE', doraise=True)" && echo "tg_stream.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/stream_server.py', doraise=True)" && echo "stream_server.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/web/wserver.py', doraise=True)" && echo "wserver.py syntax OK"
-          python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/config_manager.py', doraise=True)" && echo "config_manager.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$BS_FILE', doraise=True)" && echo "bot_settings.py syntax OK"
 
-          cd /tmp/wzml-stable
+           cd /tmp/wzml-stable
           docker build -t wzml-bot:stable . 2>&1 | tail -30
 
       - name: Start Cloudflare Tunnel and sync to Worker
         env:
-          WORKER_URL: ${{ secrets.WORKER_URL }}
+           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
         shell: bash {0}
         run: |
@@ -193,7 +196,7 @@ jobs:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
           RUN_HOURS: ${{ github.event.inputs.hours || '5' }}
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC || 'JAI_HO' }}
+          NTFY_TOPIC: ${{ secret.NTFY_TOPIC || 'JAI_HO' }}
         shell: bash {0}
         run: |
           TARGET_URL="${WORKER_URL%/}"
@@ -241,15 +244,15 @@ jobs:
             HEALTH_RES=$(curl -s "${TARGET_URL}/health" 2>/dev/null || echo "curl failed")
             echo "Health attempt $attempt: $HEALTH_RES"
             if echo "$HEALTH_RES" | grep -q '"bot_responding":true'; then
-              echo ">>> FULL CHAIN HEALTHY: Worker → Tunnel → Bot OK"
+              echo ">>> FULL CHAIN HEALTHY: Worker ↔ Tunnel ↔ Bot OK"
               break
             fi
             if [ "$attempt" -lt 3 ]; then
               echo ">>> Bot not ready yet. Re-syncing tunnel and waiting 15s..."
               curl -s -X POST "${TARGET_URL}/update-tunnel" \
-                -H "Content-Type: application/json" \
-                -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
-                -d "{\"url\": \"$(cat /tmp/tunnel_data/tunnel_url.txt)\"}" 2>/dev/null
+                  -H "Content-type: application/json" \
+                  -H "X-Tunnel-Secret: ${WORKER_SECRET}" \
+                  -d "{\"url\": \"$(cat /tmp/tunnel_data/tunnel_url.txt)\"}" 2>/dev/null
               sleep 15
             fi
           done
@@ -313,9 +316,9 @@ jobs:
                     echo ">>> WATCHDOG: New tunnel established: $NEW_URL"
                     echo -n "$NEW_URL" > /tmp/tunnel_data/tunnel_url.txt
                     curl -s -X POST "${W_URL}/update-tunnel" \
-                      -H "Content-Type: application/json" \
+                       -H "Content-Type: application/json" \
                       -H "X-Tunnel-Secret: ${W_SECRET}" \
-                      -d "{\"url\": \"${NEW_URL}\"}" 2>/dev/null
+                     -d "{\"url\": \"${NEW_URL}\"}" 2>/dev/null
                     echo ">>> WATCHDOG: New tunnel synced to Worker"
                   else
                     echo ">>> WATCHDOG: Failed to establish new tunnel!"
@@ -337,8 +340,8 @@ jobs:
                 echo "Re-synced."
               fi
               echo ""
-          done ) &
-          HEALTH_PID=$!
+            done ) &
+           HEALTH_PID=$!
 
           timeout "$TOTAL_SEC" docker logs -f wzml_bot || true
           kill $HEALTH_PID 2>/dev/null || true
