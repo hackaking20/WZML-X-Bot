@@ -79,6 +79,9 @@ jobs:
           # ─── Patch 12: Auth token forwarding ───
           python3 "$REPO_ROOT/patches/patch12.py" "$HTML_FILE"
 
+          # ─── Patch 16: Fix download button for user account ───
+          python3 "$REPO_ROOT/patches/patch16.py" "$HTML_FILE"
+
           # ─── Patch 15: bot_settings STREAM_PASS ───
           BS_FILE="$SRC_DIR/bot/modules/bot_settings.py"
           python3 "$REPO_ROOT/patches/patch15.py" "$BS_FILE"
@@ -103,6 +106,7 @@ jobs:
           grep -c "stream_auth" "$SRC_DIR/web/wserver.py" && echo "wserver auth: OK" || echo "wserver auth: NOT FOUND"
           grep -c "STREAM_PASS" "$SRC_DIR/bot/core/config_manager.py" && echo "config STREAM_PASS: OK" || echo "config STREAM_PASS: NOT FOUND"
           grep -c "STREAM_PASS" "$BS_FILE" && echo "Patch 15: OK" || echo "Patch 15: NOT FOUND"
+          grep -c "DIRECT.*_userQ" "$HTML_FILE" && echo "Patch 16: OK" || echo "Patch 16: NOT FOUND"
           grep -c "keeping stable" "$TMON_FILE" && echo "tunnel_monitor: OK" || echo "tunnel_monitor: NOT FOUND"
           python3 -c "import py_compile; py_compile.compile('$TSTREAM_FILE', doraise=True)" && echo "tg_stream.py syntax OK"
           python3 -c "import py_compile; py_compile.compile('$SRC_DIR/bot/core/stream_server.py', doraise=True)" && echo "stream_server.py syntax OK"
