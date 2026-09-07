@@ -66,8 +66,8 @@ theme_css = '''<style id="wzml-theme-style">
   --t-card-border: rgba(168, 85, 247, .35);
 }
 
-/* ── Ananya: Blossom Pastel ── (light vibrant aesthetic) */
-[data-theme="ananya"] {
+/* ── Blossom Pastel ── (light vibrant aesthetic) */
+[data-theme="blossom"] {
   color-scheme: light;
   --bg: #fdf2f8;
   --line: rgba(244, 114, 182, .10);
@@ -122,30 +122,30 @@ theme_css = '''<style id="wzml-theme-style">
   background: rgba(168, 85, 247, .14);
 }
 
-[data-theme="ananya"] body::before {
+[data-theme="blossom"] body::before {
   background:
     radial-gradient(55rem 34rem at 20% -12%, rgba(251,207,232,.30) 0%, transparent 70%),
     radial-gradient(38rem 28rem at 80% 104%, rgba(221,214,254,.30) 0%, transparent 70%),
     radial-gradient(40rem 28rem at 50% 50%, rgba(254,240,232,.15) 0%, transparent 70%);
 }
-[data-theme="ananya"] .card {
+[data-theme="blossom"] .card {
   background: var(--t-card-bg);
   border: 1px solid var(--t-card-border);
   box-shadow: 0 32px 80px -24px rgba(244,114,182,.20);
 }
-[data-theme="ananya"] h1 {
+[data-theme="blossom"] h1 {
   background: linear-gradient(180deg, #4a2040 20%, var(--pale) 130%);
   -webkit-background-clip: text;
   background-clip: text;
 }
-[data-theme="ananya"] .logo {
+[data-theme="blossom"] .logo {
   box-shadow: 0 18px 44px -14px rgba(244,114,182,.40);
 }
-[data-theme="ananya"] .button .ico {
+[data-theme="blossom"] .button .ico {
   color: var(--pale);
   background: rgba(244,114,182,.12);
 }
-[data-theme="ananya"] .button:hover {
+[data-theme="blossom"] .button:hover {
   border-color: rgba(244,114,182,.30);
   background: rgba(244,114,182,.05);
 }
@@ -218,7 +218,7 @@ theme_css = '''<style id="wzml-theme-style">
 .sw-dark { background: linear-gradient(135deg, #00000C, #3D87FF); }
 .sw-light { background: linear-gradient(135deg, #eef1f7, #3D87FF); }
 .sw-vibrant { background: linear-gradient(135deg, #0f0c29, #ec4899, #a855f7); }
-.sw-ananya { background: linear-gradient(135deg, #fdf2f8, #f9a8d4, #c4b5fd); }
+.sw-blossom { background: linear-gradient(135deg, #fdf2f8, #f9a8d4, #c4b5fd); }
 </style>'''
 
 switcher_html = '''<div class="theme-switcher" id="themeSwitcher">
@@ -233,8 +233,8 @@ switcher_html = '''<div class="theme-switcher" id="themeSwitcher">
     <button class="theme-option" data-t="vibrant">
       <span class="theme-swatch sw-vibrant"></span> Electric Aurora
     </button>
-    <button class="theme-option" data-t="ananya">
-      <span class="theme-swatch sw-ananya"></span> Blossom (Ananya)
+    <button class="theme-option" data-t="blossom">
+      <span class="theme-swatch sw-blossom"></span> Blossom
     </button>
   </div>
 </div>
@@ -266,7 +266,7 @@ switcher_html = '''<div class="theme-switcher" id="themeSwitcher">
     });
   });
   function setBtnColor(){
-    var colors = { dark:'#3D87FF', light:'#3D87FF', vibrant:'#ec4899', ananya:'#f9a8d4' };
+    var colors = { dark:'#3D87FF', light:'#3D87FF', vibrant:'#ec4899', blossom:'#f9a8d4' };
     btn.style.background = colors[saved] || '#3D87FF';
     btn.style.borderColor = colors[saved] || '#3D87FF';
   }
