@@ -6,6 +6,10 @@ async def _serve(request, kind):
 
     def _retry_url():
         p, qs = request.path, request.query_string
+        # Strip leading underscore: aiohttp internal path is /_dl/TOKEN
+        # but FastAPI public route is /dl/TOKEN
+        if p.startswith("/_"):
+            p = "/" + p[2:]
         if not qs:
             return p + "?user=1"
         if "user=" in qs:
