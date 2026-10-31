@@ -1,0 +1,63 @@
+name: Amaterasu vault
+
+# Rebuilds vault.json for the Pages hub from repository secrets, so neither
+# the passphrase nor the page list ever sits in the repo.
+#
+# Secrets used:
+#   LINK_HOUSE_PASS   the passphrase you type into the hub
+#   VAULT_PAYLOAD     the page list as JSON (recommended)
+# Optional variable:
+#   VAULT_HINT        hint shown on the lock screen
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'amaterasu/vault.payload.json'
+      - 'amaterasu/scripts/make-vault.py'
+      - 'amaterasu/scripts/build-vault.sh'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vault-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Rebuild the vault
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install cryptography
+        run: python -m pip install --quiet --upgrade pip cryptography
+
+      - name: Build vault.json from secrets
+        env:
+          LINK_HOUSE_PASS: ${{ secrets.link_house_pass }}
+          VAULT_PAYLOAD: ${{ secrets.vault_payload }}
+          VAULT_HINT: ${{ vars.VAULT_HINT }}
+        run: bash amaterasu/scripts/build-vault.sh
+
+      - name: Confirm the result is ciphertext
+        run: |
+          if [ ! -f amaterasu/vault.json ]; then
+            echo "::warning::no vault.json — set the VAULT_PAYLOAD and link_house_pass secrets"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+          raw = open("amaterasu/vault.json", encoding="utf-8").read()
+          vault = json.loads(raw)
+          assert "data" in vault and "kdf" in vault, "vault.json is malformed"
+          for leak in ('"pages"', '"pass"', "Downloader"):
+              assert leak not in raw, f"plaintext leaked into vault.json: {leak}"
+          print(f"vault ok: {vault['kdf']['iter']} iterations, {len(vault['data'])} bytes")
+          PY
