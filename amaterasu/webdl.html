@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Amaterasu · Downloader</title>
+<style>
+ :root{color-scheme:dark;--bg:#0b0b0e;--card:#121216;--card2:#17171d;--line:#242430;--txt:#e9e9ec;
+       --dim:#8a8a95;--acc:#c8442a;--ok:#7ee2a8;--warn:#e2a87e;--err:#ff8b7a}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+ a{color:inherit}
+ .wrap{max-width:760px;margin:0 auto;padding:2.2rem 1rem 4rem}
+ header{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.35rem}
+ h1{font-size:1.3rem;font-weight:650;margin:0;letter-spacing:-.01em}
+ .sub{color:var(--dim);font-size:.85rem;margin:0 0 1.4rem}
+ .pills{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.1rem}
+ .pill{font-size:.74rem;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:.16rem .62rem;background:var(--card)}
+ .pill.ok{color:var(--ok);border-color:#1d3a2a;background:#0f1a14}
+ .pill.warn{color:var(--warn);border-color:#3a2d1d;background:#1a150f}
+ .gear{border:1px solid var(--line);background:var(--card);color:var(--dim);border-radius:10px;
+       width:36px;height:36px;cursor:pointer;font-size:1rem}
+ .gear:hover{color:var(--txt)}
+ form{display:flex;gap:.5rem;flex-wrap:wrap}
+ input[type=url],input[type=password],input[type=text]{flex:1 1 320px;padding:.78rem .9rem;border-radius:11px;
+       border:1px solid var(--line);background:var(--card2);color:var(--txt);font:inherit}
+ input:focus,select:focus,button:focus-visible{outline:2px solid #3a3a46;outline-offset:1px}
+ select,button{padding:.78rem .9rem;border-radius:11px;border:1px solid var(--line);
+       background:var(--card2);color:var(--txt);font:inherit}
+ button{cursor:pointer}
+ button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:650}
+ button.ghost{background:transparent}
+ button:disabled{opacity:.5;cursor:default}
+ .card{margin-top:1.1rem;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:1rem}
+ .card.hidden{display:none}
+ .row{display:flex;justify-content:space-between;gap:1rem;align-items:center;font-size:.85rem;color:var(--dim)}
+ .row b{color:var(--txt);font-weight:600}
+ .bar{height:7px;border-radius:4px;background:var(--line);overflow:hidden;margin:.75rem 0}
+ .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#c8442a,#e26a45);transition:width .35s}
+ .media{display:flex;gap:.9rem;align-items:flex-start}
+ .media img{width:132px;border-radius:9px;border:1px solid var(--line);flex:0 0 auto}
+ .media .meta{min-width:0}
+ .media .meta b{display:block;font-size:.98rem;margin-bottom:.2rem;overflow:hidden;text-overflow:ellipsis}
+ .media .meta span{display:block;color:var(--dim);font-size:.8rem}
+ .actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem}
+ .actions .primary{padding:.7rem 1.1rem}
+ .err{color:var(--err)}
+ .hint{color:var(--dim);font-size:.78rem;margin-top:.5rem}
+ .settings{display:grid;gap:.6rem}
+ .settings label{font-size:.78rem;color:var(--dim)}
+ .history{margin-top:1.6rem}
+ .history h2{font-size:.9rem;font-weight:600;color:var(--dim);margin:0 0 .5rem}
+ .hitem{display:flex;justify-content:space-between;gap:.8rem;padding:.55rem .2rem;border-top:1px solid var(--line);
+        font-size:.84rem;color:var(--dim)}
+ .hitem b{color:var(--txt);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .hitem a{color:var(--ok);text-decoration:none}
+ footer{margin-top:2.4rem;font-size:.76rem;color:#63636d;display:flex;gap:1rem;flex-wrap:wrap}
+ footer a{color:#63636d;text-decoration:none}
+ footer a:hover{color:var(--dim)}
+ @media (max-width:520px){ .media img{width:96px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Amaterasu downloader</h1>
+    <button class="gear" id="gear" title="Settings">⚙</button>
+  </header>
+  <p class="sub">Paste a link. The bot fetches it server-side and hands you the file.</p>
+
+  <div class="pills">
+    <span class="pill" id="p-server">server: …</span>
+    <span class="pill" id="p-cookie">cookies: …</span>
+    <span class="pill" id="p-slots">slots: …</span>
+    <span class="pill" id="p-disk">disk: …</span>
+  </div>
+
+  <div class="card hidden" id="settings">
+    <div class="settings">
+      <div><label for="srv">Server URL (the bot's tunnel, or leave blank if this page is served by the bot)</label>
+        <input type="url" id="srv" placeholder="https://something.trycloudflare.com" spellcheck="false"></div>
+      <div><label for="pwd">Password, if WEBDL_PASS is set on the bot</label>
+        <input type="password" id="pwd" placeholder="optional" autocomplete="off"></div>
+      <div class="actions">
+        <button class="primary" id="save">Save</button>
+        <button class="ghost" id="reset">Reset to this page's origin</button>
+      </div>
+      <p class="hint" id="settings-hint"></p>
+    </div>
+  </div>
+
+  <form id="f">
+    <input id="u" type="url" placeholder="https://…" required autocomplete="off" spellcheck="false">
+    <button class="ghost" type="button" id="paste" title="Paste from clipboard">Paste</button>
+    <select id="m"><option value="video">video</option><option value="audio">audio (mp3)</option></select>
+    <select id="q" class="hidden"><option value="">best quality</option></select>
+    <button class="primary" type="submit" id="go">Fetch</button>
+  </form>
+
+  <div id="out"></div>
+
+  <div class="history hidden" id="history">
+    <h2>Recent</h2>
+    <div id="hlist"></div>
+  </div>
+
+  <footer>
+    <a href="/" id="homelink">home</a>
+    <a href="/app/files">file selector</a>
+    <a href="/app/encode-profiles">encodes</a>
+    <a href="/qbit/">torrents</a>
+  </footer>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const SERVED_BY_BOT = location.pathname.replace(/\/+$/, '') === '/webdl';
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('webdl.' + k); return v === null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('webdl.' + k, v); } catch (e) {} }
+  };
+
+  let server = (store.get('server', '') || (SERVED_BY_BOT ? location.origin : '')).replace(/\/+$/, '');
+  let password = store.get('pass', '');
+  let probed = null;
+  let pollTimer = null;
+
+  function api(path) {
+    const base = server || location.origin;
+    return new URL('/webdl/api' + path, base).toString();
+  }
+  function headers(extra) {
+    const h = Object.assign({ 'content-type': 'application/json' }, extra || {});
+    if (password) h['x-webdl-pass'] = password;
+    return h;
+  }
+  function human(n) {
+    if (!n) return '0 B';
+    if (n > 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+    if (n > 1048576) return (n / 1048576).toFixed(1) + ' MB';
+    return (n / 1024).toFixed(0) + ' KB';
+  }
+  function secs(s) {
+    if (!s) return '';
+    if (s > 3600) return Math.floor(s / 3600) + 'h ' + Math.round((s % 3600) / 60) + 'm';
+    if (s > 60) return Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's';
+    return Math.round(s) + 's';
+  }
+  function duration(s) {
+    if (!s) return '';
+    const m = Math.floor(s / 60), r = Math.round(s % 60);
+    return m + ':' + String(r).padStart(2, '0');
+  }
+  function pill(id, text, cls) {
+    const el = $(id);
+    el.textContent = text;
+    el.className = 'pill' + (cls ? ' ' + cls : '');
+  }
+
+  async function info() {
+    if (!server) { pill('p-server', 'server: not set', 'warn'); return; }
+    pill('p-server', 'server: ' + server.replace(/^https?:\/\//, '').slice(0, 28));
+    try {
+      const r = await fetch(api('/info'), { headers: headers() });
+      if (!r.ok) { pill('p-cookie', 'cookies: ?', 'warn'); return; }
+      const j = await r.json();
+      pill('p-cookie', 'cookies: ' + (j.cookies === 'none' ? 'none' : 'on'), j.cookies === 'none' ? 'warn' : 'ok');
+      if (j.cookies !== 'none') $('p-cookie').title = j.cookies;
+      pill('p-slots', 'slots: ' + j.active + '/' + j.concurrent);
+      pill('p-disk', 'disk: ' + j.disk_gb.toFixed(1) + '/' + j.max_gb + ' GB');
+      if (j.auth_required && !password) {
+        $('settings').classList.remove('hidden');
+        $('settings-hint').textContent = 'This bot requires a password for downloads.';
+      }
+    } catch (e) {
+      pill('p-cookie', 'server unreachable', 'warn');
+    }
+  }
+
+  function renderProbe(p) {
+    if (p.playlist) {
+      $('out').innerHTML =
+        '<div class="card"><div class="row"><b>' + escapeHtml(p.title) + '</b><span>' + p.count + ' items</span></div>' +
+        '<p class="hint">Playlist detected. Starting will fetch the first item only.</p>' +
+        '<div class="actions"><button class="primary" id="start">Download</button></div></div>';
+    } else {
+      const thumb = p.thumbnail ? '<img src="' + p.thumbnail + '" alt="" referrerpolicy="no-referrer">' : '';
+      const bits = [p.uploader, duration(p.duration), p.filesize ? human(p.filesize) : ''].filter(Boolean).join(' · ');
+      $('out').innerHTML =
+        '<div class="card"><div class="media">' + thumb +
+        '<div class="meta"><b>' + escapeHtml(p.title || 'untitled') + '</b><span>' + escapeHtml(bits) + '</span></div></div>' +
+        '<div class="actions"><button class="primary" id="start">Download</button>' +
+        '<button class="ghost" id="clear">Clear</button></div></div>';
+    }
+    $('start').onclick = () => start();
+    const clear = $('clear');
+    if (clear) clear.onclick = () => { $('out').innerHTML = ''; };
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function probe(url) {
+    $('go').disabled = true;
+    $('out').innerHTML = '<div class="card"><div class="row"><span>Reading the link…</span></div></div>';
+    try {
+      const r = await fetch(api('/probe'), {
+        method: 'POST', headers: headers(), body: JSON.stringify({ url: url })
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || ('probe failed (' + r.status + ')'));
+      probed = j;
+      const sel = $('q');
+      sel.innerHTML = '<option value="">best quality</option>';
+      (j.heights || []).forEach((h) => {
+        const o = document.createElement('option');
+        o.value = String(h); o.textContent = h + 'p';
+        sel.appendChild(o);
+      });
+      sel.classList.toggle('hidden', !(j.heights || []).length);
+      renderProbe(j);
+    } catch (err) {
+      $('out').innerHTML = '<div class="card err">' + escapeHtml(err.message) + '</div>';
+    } finally {
+      $('go').disabled = false;
+    }
+  }
+
+  async function start() {
+    const url = $('u').value.trim();
+    const mode = $('m').value;
+    const quality = $('q').value;
+    $('go').disabled = true;
+    try {
+      const r = await fetch(api('/start'), {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ url: url, mode: mode, quality: quality, title: probed && probed.title })
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || ('rejected (' + r.status + ')'));
+      poll(j.job_id);
+    } catch (err) {
+      $('out').innerHTML = '<div class="card err">' + escapeHtml(err.message) + '</div>';
+      $('go').disabled = false;
+    }
+  }
+
+  function downloadLink(id) {
+    const u = new URL('/webdl/download/' + id, server || location.origin);
+    if (password) u.searchParams.set('pass', password);
+    return u.toString();
+  }
+
+  async function poll(id) {
+    clearTimeout(pollTimer);
+    try {
+      const r = await fetch(api('/status/' + id), { headers: headers() });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || 'lost the job');
+      if (j.state === 'error') {
+        $('out').innerHTML = '<div class="card"><div class="row"><b class="err">Failed</b></div>' +
+          '<p class="hint">' + escapeHtml(j.error) + '</p></div>';
+        $('go').disabled = false; info(); return;
+      }
+      if (j.state === 'done') {
+        $('out').innerHTML =
+          '<div class="card"><div class="row"><b>' + escapeHtml(j.title || j.filename) + '</b><span>' + human(j.size) + '</span></div>' +
+          '<div class="actions"><a class="primary" style="padding:.7rem 1.1rem;border-radius:11px;text-decoration:none" href="' +
+          downloadLink(id) + '">Download ' + escapeHtml(j.filename) + '</a></div>' +
+          '<p class="hint">Kept for ' + 'a few hours' + ', then deleted automatically.</p></div>';
+        $('go').disabled = false; info(); remember(j, id); return;
+      }
+      const label = j.stage === 'processing' ? 'converting…' : (j.title || 'fetching…');
+      $('out').innerHTML =
+        '<div class="card"><div class="row"><b>' + escapeHtml(label) + '</b>' +
+        '<span>' + j.percent.toFixed(0) + '%' +
+        (j.speed ? ' · ' + human(j.speed) + '/s' : '') +
+        (j.eta ? ' · ' + secs(j.eta) + ' left' : '') + '</span></div>' +
+        '<div class="bar"><i style="width:' + j.percent + '%"></i></div>' +
+        '<div class="row"><span>' + human(j.downloaded) + ' of ' + (j.total ? human(j.total) : '?') + '</span>' +
+        '<span>' + escapeHtml(j.mode) + '</span></div>' +
+        '<div class="actions"><button class="ghost" id="cancel">Cancel</button></div></div>';
+      $('cancel').onclick = async () => {
+        await fetch(api('/cancel/' + id), { method: 'POST', headers: headers() });
+        $('out').innerHTML = '<div class="card">cancelled</div>';
+        $('go').disabled = false; info();
+      };
+      pollTimer = setTimeout(() => poll(id), 1200);
+    } catch (err) {
+      $('out').innerHTML = '<div class="card err">' + escapeHtml(err.message) + '</div>';
+      $('go').disabled = false;
+    }
+  }
+
+  function remember(job, id) {
+    let list = [];
+    try { list = JSON.parse(store.get('history', '[]')); } catch (e) { list = []; }
+    list = list.filter((item) => item.id !== id);
+    list.unshift({ id: id, name: job.filename || job.title || id, size: job.size || 0, at: Date.now() });
+    list = list.slice(0, 10);
+    store.set('history', JSON.stringify(list));
+    renderHistory();
+  }
+
+  function renderHistory() {
+    let list = [];
+    try { list = JSON.parse(store.get('history', '[]')); } catch (e) { list = []; }
+    if (!list.length) { $('history').classList.add('hidden'); return; }
+    $('history').classList.remove('hidden');
+    $('hlist').innerHTML = list.map((item) =>
+      '<div class="hitem"><b>' + escapeHtml(item.name) + '</b>' +
+      '<span>' + human(item.size) + ' · <a href="' + downloadLink(item.id) + '">download</a></span></div>'
+    ).join('');
+  }
+
+  $('f').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const url = $('u').value.trim();
+    if (!url) return;
+    probe(url);
+  });
+
+  $('paste').onclick = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) { $('u').value = text.trim(); probe(text.trim()); }
+    } catch (e) {
+      $('u').focus();
+    }
+  };
+
+  $('gear').onclick = () => $('settings').classList.toggle('hidden');
+
+  $('save').onclick = () => {
+    server = $('srv').value.trim().replace(/\/+$/, '');
+    password = $('pwd').value;
+    store.set('server', server);
+    store.set('pass', password);
+    $('settings-hint').textContent = 'Saved.';
+    info();
+  };
+
+  $('reset').onclick = () => {
+    $('srv').value = '';
+    store.set('server', '');
+    server = SERVED_BY_BOT ? location.origin : '';
+    info();
+  };
+
+  $('m').onchange = () => {
+    $('q').classList.toggle('hidden', $('m').value === 'audio' || !$('q').options.length > 1);
+  };
+
+  if (!SERVED_BY_BOT && !server) {
+    $('settings').classList.remove('hidden');
+    $('settings-hint').textContent = 'Point this page at your bot: paste the tunnel URL (or your GitHub Pages redirect URL) and save.';
+    $('srv').value = store.get('server', '');
+  } else {
+    $('srv').value = store.get('server', '');
+  }
+  $('pwd').value = password;
+  info();
+  setInterval(info, 20000);
+  renderHistory();
+})();
+</script>
+</body>
+</html>
