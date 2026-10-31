@@ -1,0 +1,111 @@
+name: Amaterasu bot (harness)
+
+# Runs Amaterasu on a throwaway GitHub Actions runner.
+#
+# Every run clones upstream fresh, installs the toolchain, boots the bot, and
+# dies with the runner. State that survives lives in MongoDB, not on disk.
+# Configure it with repository secrets (see README.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: 'Run length in minutes (max 330)'
+        required: false
+        default: '290'
+  schedule:
+    # Every 5 hours. GitHub's scheduler can be 5-20 minutes late under load.
+    - cron: '0 */5 * * *'
+
+# A new run kills the previous one. That is what keeps the bot "always on":
+# each run hands the torch to the next.
+concurrency:
+  group: amaterasu-runner
+  cancel-in-progress: true
+
+permissions:
+  # write, so the run can commit tunnel.json for the GitHub Pages redirect
+  contents: write
+
+jobs:
+  bot:
+    name: Run Amaterasu
+    runs-on: ubuntu-24.04
+    # Hard ceiling for GitHub-hosted runners is 360; stay under it.
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout harness repo
+        uses: actions/checkout@v4
+
+      - name: Runner diagnostics
+        run: |
+          echo "Disk:"; df -h / /tmp | sed 's/^/  /'
+          echo "CPU: $(nproc) cores, RAM: $(free -h | awk '/^Mem:/{print $2}')"
+
+      - name: Install toolchain and Python env
+        env:
+          AMATERASU_REPO: ${{ vars.AMATERASU_REPO }}
+          AMATERASU_REF: ${{ vars.AMATERASU_REF }}
+        run: bash amaterasu/scripts/setup-runner.sh
+
+      - name: Run Amaterasu
+        env:
+          BOT_MINUTES: ${{ github.event.inputs.minutes || '290' }}
+
+          # ── Required ────────────────────────────────────────────────────
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_API: ${{ secrets.TELEGRAM_API }}
+          TELEGRAM_HASH: ${{ secrets.TELEGRAM_HASH }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+          # ── Optional but recommended ────────────────────────────────────
+          USER_SESSION_STRING: ${{ secrets.USER_SESSION_STRING }}
+          WEB_ACCESS_PASSWORD: ${{ secrets.WEB_ACCESS_PASSWORD }}
+          HELPER_TOKENS: ${{ secrets.HELPER_TOKENS }}
+          LOG_CHAT_ID: ${{ secrets.LOG_CHAT_ID }}
+
+          # ── Harness knobs ───────────────────────────────────────────────
+          # Cloudflare Worker that gives you one stable URL. Leave both empty
+          # to use the rotating trycloudflare.com URL the bot prints instead.
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+          # Off by default: a machine commit every five hours is visible
+          # activity in the repo, and the hub is optional. Set to '1' only if
+          # you actually use the Pages hub.
+          PAGES_PUBLISH: '0'
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+
+          # ── Runtime defaults for this platform ──────────────────────────
+          PORT: '8080'
+          TIMEZONE: 'Asia/Kolkata'
+          BIND_TO_LOOPBACK: 'True'
+          CLOUDFLARE_TUNNEL_ENABLED: 'True'
+          CLOUDFLARE_TUNNEL_AUTO_URL: 'True'
+          CLOUDFLARE_TUNNEL_TARGET: 'http://127.0.0.1:8080'
+          # The runner is disposable, so never let the bot git-pull over itself.
+          AUTO_UPDATE: 'False'
+          UPDATE_PKGS: 'False'
+          # JDownloader wants a Java install plus a ~150 MB download per boot;
+          # SABnzbd needs an apt package that is fiddly here. Both are off by
+          # default. Flip to False in a repository *variable* if you want them.
+          DISABLE_JD: 'True'
+          DISABLE_NZB: 'True'
+          # ffmpeg lists h264_nvenc as compiled in even with no NVIDIA GPU,
+          # so 'auto' detection claims hardware encoding on a runner and then
+          # fails at encode time. Force software.
+          FFMPEG_HW_ACCEL: 'none'
+
+        run: bash amaterasu/scripts/run-bot.sh
+
+      - name: Upload bot log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amaterasu-log
+          path: |
+            app/log.txt
+            app/rlog.txt
+          if-no-files-found: ignore
+          retention-days: 3
