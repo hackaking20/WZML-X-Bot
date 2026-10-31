@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Amaterasu</title>
+<style>
+ :root{color-scheme:dark}
+ body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0b0e;color:#e9e9ec;
+      font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;padding:1.5rem}
+ main{max-width:520px;width:100%}
+ .card{border:1px solid #242430;border-radius:14px;background:#121216;padding:1.15rem}
+ h1{font-size:1.25rem;font-weight:650;margin:0 0 .3rem}
+ p{margin:.45rem 0;color:#8a8a95}
+ code{background:#17171d;border:1px solid #242430;border-radius:6px;padding:.14rem .42rem;font-size:.82rem;
+      word-break:break-all;color:#e9e9ec}
+ a.go{display:inline-block;margin-top:1rem;padding:.7rem 1.1rem;border-radius:11px;background:#c8442a;
+      color:#fff;text-decoration:none;font-weight:650}
+ .err{color:#ff8b7a}
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Amaterasu</h1>
+    <p id="status">Looking for the bot…</p>
+    <p id="target"></p>
+    <a class="go" id="manual" href="#" style="display:none">Open now</a>
+  </div>
+</main>
+<script>
+// GitHub Pages serves this file for any unknown path, so a deep link such as
+// /amaterasu-runner/webdl keeps its path on the way to the tunnel.
+var OWNER = location.hostname.split('.')[0];
+var parts = location.pathname.split('/').filter(Boolean);
+var REPO = parts.shift() || '';
+var SUFFIX = parts.length ? '/' + parts.join('/') : '';
+var BRANCH = 'main';
+var MAX_AGE_H = 6;
+function $(id) { return document.getElementById(id); }
+
+window.addEventListener('error', function (event) {
+  var s = $('status');
+  if (s) { s.className = 'err'; s.textContent = 'Page error: ' + (event.message || 'unknown'); }
+});
+
+function apiUrl() {
+  var u = new URL('https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/tunnel.json');
+  u.searchParams.set('ref', BRANCH);
+  u.searchParams.set('t', String(Date.now()));
+  return u.toString();
+}
+function rawUrl() {
+  var u = new URL('https://raw.githubusercontent.com/' + OWNER + '/' + REPO + '/' + BRANCH + '/tunnel.json');
+  u.searchParams.set('t', String(Date.now()));
+  return u.toString();
+}
+
+function readState() {
+  return fetch(apiUrl(), { headers: { Accept: 'application/vnd.github.raw' }, cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.text() : null; })
+    .then(function (text) { return text ? JSON.parse(text) : null; })
+    .catch(function () { return null; })
+    .then(function (state) {
+      if (state && state.url) return state;
+      return fetch(rawUrl(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .then(function (text) { return text ? JSON.parse(text) : null; })
+        .catch(function () { return null; });
+    });
+}
+
+readState().then(function (state) {
+  if (!state || !state.url) {
+    $('status').className = 'err';
+    $('status').textContent = 'No tunnel URL published yet — the bot may not have started.';
+    return;
+  }
+  var age = (Date.now() - Date.parse(state.updated)) / 1000;
+  var target = String(state.url).replace(/\/+$/, '') + SUFFIX + location.search;
+  $('target').innerHTML = '<code>' + target + '</code>';
+  var manual = $('manual');
+  manual.href = target;
+  manual.style.display = 'inline-block';
+  if (!(age < MAX_AGE_H * 3600)) {
+    $('status').className = 'err';
+    $('status').textContent = 'That tunnel is stale, so the bot is probably offline.';
+    return;
+  }
+  $('status').textContent = 'Redirecting…';
+  setTimeout(function () { location.replace(target); }, 400);
+}).catch(function (error) {
+  $('status').className = 'err';
+  $('status').textContent = 'Could not read the state file: ' + error.message;
+});
+</script>
+</body>
+</html>
