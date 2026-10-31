@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Amaterasu · vault maker</title>
+<style>
+ :root{color-scheme:dark;--bg:#0a0a0d;--card:#111116;--card2:#16161c;--line:#232330;--txt:#e9e9ec;
+       --dim:#87878f;--acc:#c8442a;--ok:#7ee2a8;--err:#ff8b7a}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+      display:flex;justify-content:center;padding:2rem 1rem 4rem}
+ .wrap{width:100%;max-width:780px}
+ h1{font-size:1.3rem;font-weight:650;margin:0 0 .2rem}
+ .sub{color:var(--dim);font-size:.85rem;margin:0 0 1.3rem}
+ .card{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:1.1rem;margin-bottom:1rem}
+ label{display:block;font-size:.78rem;color:var(--dim);margin:.7rem 0 .3rem}
+ input,textarea,button{font:inherit;width:100%}
+ input,textarea{padding:.7rem .85rem;border-radius:10px;border:1px solid var(--line);background:var(--card2);
+      color:var(--txt);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem}
+ textarea{min-height:300px;resize:vertical;line-height:1.5}
+ button{cursor:pointer;padding:.75rem 1rem;border-radius:11px;border:1px solid var(--line);background:var(--card2);color:var(--txt)}
+ button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:650}
+ button:disabled{opacity:.5;cursor:default}
+ .row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem}
+ .muted{color:var(--dim);font-size:.8rem}
+ .err{color:var(--err)}
+ .ok{color:var(--ok)}
+ .warn{border-left:3px solid #e2a87e;padding-left:.8rem;color:#c9a58c;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Vault maker</h1>
+  <p class="sub">Builds <code>vault.json</code> for the Amaterasu hub. Runs entirely in this browser tab — nothing is uploaded, and there is no network call in this page.</p>
+
+  <div class="card">
+    <p class="warn">Open this file locally (double-click it). Do not host it on Pages: it would be harmless, but it is a tool, not a page.</p>
+
+    <label for="payload">Payload — the page list and any passwords</label>
+    <textarea id="payload" spellcheck="false"></textarea>
+
+    <label for="pass">Passphrase (choose something long; it is the only thing protecting this)</label>
+    <input type="password" id="pass" autocomplete="new-password" placeholder="at least 12 characters">
+    <label for="pass2">Repeat it</label>
+    <input type="password" id="pass2" autocomplete="new-password">
+
+    <label for="hint">Hint shown on the lock screen (optional, stored in clear)</label>
+    <input type="text" id="hint" placeholder="e.g. the usual one, plus the year">
+
+    <div class="row">
+      <button class="primary" id="go">Encrypt</button>
+      <button id="download" disabled>Download vault.json</button>
+      <button id="copy" disabled>Copy to clipboard</button>
+    </div>
+    <p class="muted" id="status"></p>
+  </div>
+
+  <div class="card">
+    <label for="out">vault.json — commit this file to the repo root</label>
+    <textarea id="out" spellcheck="false" readonly placeholder="the ciphertext appears here"></textarea>
+    <p class="muted">AES-GCM, 256-bit key derived with PBKDF2-SHA256 at 310,000 iterations. Only this ciphertext goes into the repo — the page list and passwords never do.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var DEFAULT_PAYLOAD = {
+    title: 'Amaterasu',
+    subtitle: 'Control panel',
+    notes: '',
+    pages: [
+      { name: 'Downloader', path: '/webdl', desc: 'Paste a link, pick a quality, get the file.', pass: '' },
+      { name: 'Home', path: '/', desc: 'Landing page and node status.', pass: '' },
+      { name: 'File selector', path: '/app/files', desc: 'Pick files out of a torrent.', pass: '' },
+      { name: 'Encode profiles', path: '/app/encode-profiles', desc: 'FFmpeg presets.', pass: '' },
+      { name: 'Merge planner', path: '/app/merge-plan', desc: 'Order split parts for merging.', pass: '' },
+      { name: 'Session generator', path: '/app/session-generator', desc: 'Mint a USER_SESSION_STRING.', pass: '' },
+      { name: 'Google token', path: '/app/token-generator', desc: 'Drive OAuth token.', pass: '' },
+      { name: 'qBittorrent', path: '/qbit/', desc: 'The torrent client UI.', pass: '' }
+    ]
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var ITER = 310000;
+
+  $('payload').value = JSON.stringify(DEFAULT_PAYLOAD, null, 2);
+
+  function b64(bytes) {
+    var s = '';
+    var view = new Uint8Array(bytes);
+    for (var i = 0; i < view.length; i += 1) s += String.fromCharCode(view[i]);
+    return btoa(s);
+  }
+
+  function encrypt(payloadText, passphrase) {
+    var enc = new TextEncoder();
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey'])
+      .then(function (base) {
+        return crypto.subtle.deriveKey(
+          { name: 'PBKDF2', salt: salt, iterations: ITER, hash: 'SHA-256' },
+          base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']
+        );
+      })
+      .then(function (key) {
+        return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv, tagLength: 128 }, key, enc.encode(payloadText));
+      })
+      .then(function (cipher) {
+        return {
+          v: 1,
+          kdf: { name: 'PBKDF2', hash: 'SHA-256', iter: ITER, salt: b64(salt) },
+          iv: b64(iv),
+          hint: $('hint').value.trim(),
+          data: b64(cipher)
+        };
+      });
+  }
+
+  $('go').onclick = function () {
+    var text = $('payload').value;
+    var pass = $('pass').value;
+    var pass2 = $('pass2').value;
+    $('status').className = 'muted';
+    $('status').textContent = '';
+
+    var parsed;
+    try { parsed = JSON.parse(text); }
+    catch (e) { $('status').className = 'err'; $('status').textContent = 'Payload is not valid JSON: ' + e.message; return; }
+    if (!parsed.pages || !parsed.pages.length) {
+      $('status').className = 'err'; $('status').textContent = 'Payload needs a "pages" array.'; return;
+    }
+    if (pass.length < 12) {
+      $('status').className = 'err'; $('status').textContent = 'Passphrase must be at least 12 characters.'; return;
+    }
+    if (pass !== pass2) {
+      $('status').className = 'err'; $('status').textContent = 'The two passphrases differ.'; return;
+    }
+    encrypt(text, pass).then(function (vault) {
+      $('out').value = JSON.stringify(vault, null, 2) + '\n';
+      $('download').disabled = false;
+      $('copy').disabled = false;
+      $('status').className = 'ok';
+      $('status').textContent = 'Encrypted. Commit vault.json to the repo root, then reload the hub.';
+    }).catch(function (error) {
+      $('status').className = 'err';
+      $('status').textContent = 'Encryption failed: ' + error.message;
+    });
+  };
+
+  $('download').onclick = function () {
+    var blob = new Blob([$('out').value], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vault.json';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  };
+
+  $('copy').onclick = function () {
+    navigator.clipboard.writeText($('out').value).then(function () {
+      $('status').className = 'ok';
+      $('status').textContent = 'Copied.';
+    }).catch(function () {});
+  };
+})();
+</script>
+</body>
+</html>
