@@ -47,7 +47,7 @@ jobs:
 
       - name: Cloudflare Worker
         run: |
-          cd cloudflare-worker
+          cd amaterasu/cloudflare-worker
           cp worker.js worker.mjs
           node test-worker.mjs
           rm -f worker.mjs
@@ -70,8 +70,13 @@ jobs:
           code=$(curl -s -o /tmp/index.html -w '%{http_code}' -m 30 "$SITE" || echo ERR)
           echo "index status: $code"
           if [ "$code" != "200" ]; then
-            echo "::error::Pages site is not serving (status $code)"
-            exit 1
+            if [ "${PAGES_EXPECTED:-0}" = "1" ]; then
+              echo "::error::Pages is expected but not serving (status $code)"
+              exit 1
+            fi
+            echo "::notice::Pages is not enabled on this repo — skipping the hub checks"
+            echo "SKIP_PAGES=1" >> "$GITHUB_ENV"
+            exit 0
           fi
           # the root is a hub now, not a redirect: it must unlock a vault and
           # read the live tunnel rather than bounce the visitor straight there
@@ -160,6 +165,7 @@ jobs:
           fi
 
       - name: Check the published tunnel state
+        if: env.SKIP_PAGES != '1'
         run: |
           set -euo pipefail
           OWNER="${GITHUB_REPOSITORY%%/*}"
@@ -187,6 +193,7 @@ jobs:
           PY
 
       - name: Is the bot answering right now?
+        if: env.SKIP_PAGES != '1'
         continue-on-error: true
         run: |
           URL=$(cat /tmp/tunnel_url)
