@@ -135,6 +135,35 @@ except Exception:
     done
 }
 
+# ── One-shot diagnostics ─────────────────────────────────────────────────
+# Two minutes after the bot starts, dump what the supervisor can see — the
+# tunnel endpoint, the port, and the tail of the bot log — into the repo so it
+# can be read without job-log access.
+dump_diagnostics() {
+    (
+        sleep 120
+        repo_root="$(cd "$HARNESS_DIR/.." && pwd)"
+        out="$repo_root/diagnostics/runner.log"
+        mkdir -p "$repo_root/diagnostics"
+        {
+            echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+            echo "--- api/tunnel (port ${PORT:-8080}) ---"
+            curl -sS -m 5 "http://127.0.0.1:${PORT:-8080}/api/tunnel" 2>&1 || echo "curl failed"
+            echo
+            echo "--- listening ports ---"
+            (ss -ltnp 2>/dev/null || netstat -ltn 2>/dev/null) | head -20
+            echo "--- log tail ---"
+            tail -150 "$BOT_LOG" 2>/dev/null || echo "no log at $BOT_LOG"
+        } > "$out" 2>&1
+        cd "$repo_root" || exit 0
+        git add diagnostics/runner.log >/dev/null 2>&1 || exit 0
+        git diff --cached --quiet && exit 0
+        git -c user.name="amaterasu-runner" -c user.email="runner@users.noreply.github.com" \
+            commit -q -m "diagnostics: runner log $(date -u +%H:%MZ)" >/dev/null 2>&1 || exit 0
+        git push -q origin HEAD >/dev/null 2>&1 || true
+    ) &
+}
+
 # ── Main supervision loop ────────────────────────────────────────────────
 mkdir -p "$APP_DIR" 2>/dev/null || true
 cd "$APP_DIR" || { log "missing app dir $APP_DIR"; exit 1; }
@@ -193,6 +222,8 @@ while :; do
     attempt_started=$(date +%s)
     log "attempt $attempt: starting bot with ${remaining}s of budget left"
     notify "Amaterasu starting" "attempt $attempt, ${remaining}s budget"
+
+    [ "$attempt" -eq 1 ] && dump_diagnostics
 
     # SIGTERM at the deadline, SIGKILL 90s later if it hangs on the way out.
     timeout --signal=TERM --kill-after=90 "$remaining" python -m bot
