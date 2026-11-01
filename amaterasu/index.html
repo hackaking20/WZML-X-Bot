@@ -3,322 +3,91 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';
-               connect-src https://api.github.com https://raw.githubusercontent.com;
-               img-src https: data:; base-uri 'none'; form-action 'none'">
 <title>Amaterasu</title>
 <style>
- :root{color-scheme:dark;--bg:#0a0a0d;--card:#111116;--card2:#16161c;--line:#232330;--txt:#e9e9ec;
-       --dim:#87878f;--acc:#c8442a;--ok:#7ee2a8;--warn:#e2a87e;--err:#ff8b7a}
- *{box-sizing:border-box}
- body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
-      min-height:100vh;display:flex;justify-content:center;padding:2rem 1rem 4rem}
- .wrap{width:100%;max-width:820px}
- h1{font-size:1.35rem;font-weight:650;margin:0;letter-spacing:-.01em}
- .sub{color:var(--dim);font-size:.85rem;margin:.2rem 0 1.4rem}
- .card{border:1px solid var(--line);border-radius:14px;background:var(--card);padding:1.1rem}
- .hidden{display:none !important}
- input,button{font:inherit}
- input[type=password],input[type=url]{width:100%;padding:.78rem .9rem;border-radius:11px;border:1px solid var(--line);
-       background:var(--card2);color:var(--txt)}
- input:focus,button:focus-visible{outline:2px solid #3a3a46;outline-offset:1px}
- button{cursor:pointer;padding:.75rem 1rem;border-radius:11px;border:1px solid var(--line);background:var(--card2);color:var(--txt)}
- button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:650}
- button.tiny{padding:.28rem .55rem;border-radius:8px;font-size:.76rem}
- button:disabled{opacity:.5;cursor:default}
- .row{display:flex;gap:.55rem;align-items:center}
- .row.between{justify-content:space-between}
- .muted{color:var(--dim);font-size:.8rem}
- .err{color:var(--err)}
- .ok{color:var(--ok)}
- .pill{font-size:.74rem;border:1px solid var(--line);border-radius:999px;padding:.16rem .6rem;color:var(--dim);background:var(--card2)}
- .pill.ok{color:var(--ok);border-color:#1d3a2a;background:#0f1a14}
- .pill.warn{color:var(--warn);border-color:#3a2d1d;background:#1a150f}
- .grid{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));margin-top:1rem}
- .site{border:1px solid var(--line);border-radius:12px;background:var(--card2);padding:.85rem .9rem}
- .site b{display:block;font-size:.95rem;margin-bottom:.15rem}
- .site .desc{color:var(--dim);font-size:.78rem;min-height:2.2em}
- .site .acts{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem;align-items:center}
- .site a{color:var(--ok);text-decoration:none;font-size:.82rem;font-weight:600}
- .pw{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;background:#0d0d12;
-     border:1px solid var(--line);border-radius:7px;padding:.18rem .45rem;color:var(--warn)}
- header{display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:.2rem}
- footer{margin-top:1.6rem;font-size:.75rem;color:#5f5f68;display:flex;gap:1rem;flex-wrap:wrap}
- .shake{animation:shake .32s}
- @keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
- .lockrow{display:flex;justify-content:space-between;align-items:center;margin-top:1.2rem}
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #0f1115; color: #e6e6e6;
+    font: 15px/1.6 system-ui, -apple-system, Segoe UI, sans-serif;
+    padding: 24px;
+  }
+  .wrap { width: min(520px, 100%); }
+  h1 { font-size: 20px; margin: 0 0 6px; font-weight: 600; }
+  .sub { color: #8b93a7; font-size: 13px; margin: 0 0 26px; }
+  a.card {
+    display: block; text-decoration: none; color: inherit;
+    background: #171a21; border: 1px solid #23262f; border-radius: 14px;
+    padding: 20px 22px; margin-bottom: 14px;
+    transition: border-color .15s, transform .15s;
+  }
+  a.card:hover { border-color: #3b6cf6; transform: translateY(-1px); }
+  a.card.off { opacity: .55; pointer-events: none; }
+  .t { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
+  .d { color: #8b93a7; font-size: 13px; }
+  .state { color: #8b93a7; font-size: 12px; margin-top: 22px; font-family: ui-monospace, monospace; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+  .live { background: #35d07f; }
+  .down { background: #ff7a7a; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1 id="title">Amaterasu</h1>
-    <span class="pill" id="lockstate">locked</span>
-  </header>
-  <p class="sub" id="subtitle">Enter the passphrase to unlock the control panel.</p>
+  <h1>Amaterasu</h1>
+  <p class="sub">Two doors. Everything else is behind the second one.</p>
 
-  <div class="card" id="unlockcard">
-    <form id="unlock" class="row" autocomplete="off">
-      <input type="password" id="pass" placeholder="passphrase" autocomplete="current-password" required>
-      <button class="primary" type="submit" id="unlockbtn">Unlock</button>
-    </form>
-    <p class="muted" id="hint" style="margin:.6rem 0 0"></p>
-    <p class="err" id="unlockerr" style="margin:.4rem 0 0"></p>
-  </div>
+  <a class="card" id="go-web" href="#">
+    <div class="t">Webpage test</div>
+    <div class="d">Open the live web downloader</div>
+  </a>
 
-  <div class="hidden" id="panel">
-    <div class="card">
-      <div class="row between">
-        <div>
-          <b id="botname">Bot</b>
-          <div class="muted" id="tunnel">looking for the tunnel…</div>
-        </div>
-        <div class="row">
-          <span class="pill" id="freshness">—</span>
-          <button class="tiny" id="relock">Lock</button>
-        </div>
-      </div>
-      <div class="row" style="margin-top:.8rem">
-        <a id="openbot" class="pill ok" href="#" target="_blank" rel="noreferrer noopener" style="text-decoration:none">open bot</a>
-        <span class="muted" id="autolock"></span>
-      </div>
-    </div>
+  <a class="card" id="go-links" href="#">
+    <div class="t">Pages &amp; passwords</div>
+    <div class="d">Every page this bot serves, with its password — asks for the password</div>
+  </a>
 
-    <div class="grid" id="sites"></div>
-
-    <p class="muted" id="notes" style="margin-top:1.2rem"></p>
-  </div>
-
-  <footer>
-    <span id="foot"></span>
-    <span>content is AES-GCM encrypted in the repo</span>
-  </footer>
+  <div class="state"><span class="dot down" id="dot"></span><span id="state">checking the tunnel…</span></div>
 </div>
 
 <script>
 (function () {
-  var $ = function (id) { return document.getElementById(id); };
-  var OWNER = location.hostname.split('.')[0];
-  var REPO = location.pathname.split('/').filter(Boolean)[0] || '';
-  var BRANCH = 'main';
-  var AUTO_LOCK_MS = 10 * 60 * 1000;
-  var payload = null;
-  var tunnelUrl = '';
-  var fails = 0;
-  var lockTimer = null;
+  var web = document.getElementById('go-web');
+  var links = document.getElementById('go-links');
+  var dot = document.getElementById('dot');
+  var state = document.getElementById('state');
 
-  window.addEventListener('error', function (e) {
-    var el = $('unlockerr');
-    if (el) { el.textContent = 'Page error: ' + (e.message || 'unknown'); }
-  });
-
-  function bust(u) { u.searchParams.set('t', String(Date.now())); return u.toString(); }
-  function vaultUrl() {
-    return bust(new URL('https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/vault.json'));
-  }
-  function vaultRawUrl() {
-    return bust(new URL('https://raw.githubusercontent.com/' + OWNER + '/' + REPO + '/' + BRANCH + '/vault.json'));
-  }
-  function stateUrl() {
-    var u = new URL('https://api.github.com/repos/' + OWNER + '/' + REPO + '/contents/tunnel.json');
-    u.searchParams.set('ref', BRANCH);
-    return bust(u);
-  }
-  function stateRawUrl() {
-    return bust(new URL('https://raw.githubusercontent.com/' + OWNER + '/' + REPO + '/' + BRANCH + '/tunnel.json'));
+  function setLive(base) {
+    web.href = base + '/webdl';
+    links.href = base + '/links';
+    web.classList.remove('off');
+    links.classList.remove('off');
+    dot.className = 'dot live';
+    state.textContent = 'tunnel ' + base.replace('https://', '');
   }
 
-  function fetchJson(urls) {
-    var attempt = function (index) {
-      if (index >= urls.length) return Promise.resolve(null);
-      return fetch(urls[index], { cache: 'no-store', headers: { Accept: 'application/vnd.github.raw' } })
-        .then(function (r) { return r.ok ? r.text() : null; })
-        .then(function (t) { return t ? JSON.parse(t) : null; })
-        .catch(function () { return null; })
-        .then(function (value) { return value || attempt(index + 1); });
-    };
-    return attempt(0);
+  function setDown(message) {
+    dot.className = 'dot down';
+    state.textContent = message;
+    web.classList.add('off');
+    links.classList.add('off');
   }
 
-  function b64ToBytes(b64) {
-    var raw = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
-    var out = new Uint8Array(raw.length);
-    for (var i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
-    return out;
-  }
-
-  function decrypt(vault, passphrase) {
-    var enc = new TextEncoder();
-    return crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey'])
-      .then(function (base) {
-        return crypto.subtle.deriveKey(
-          { name: 'PBKDF2', salt: b64ToBytes(vault.kdf.salt), iterations: vault.kdf.iter, hash: 'SHA-256' },
-          base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
-        );
-      })
-      .then(function (key) {
-        return crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv: b64ToBytes(vault.iv), tagLength: 128 },
-          key, b64ToBytes(vault.data)
-        );
-      })
-      .then(function (buf) { return JSON.parse(new TextDecoder().decode(buf)); });
-  }
-
-  function ageText(seconds) {
-    if (seconds < 90) return 'live now';
-    if (seconds < 5400) return Math.round(seconds / 60) + ' min old';
-    return Math.round(seconds / 3600) + ' h old';
-  }
-
-  function lock(reason) {
-    payload = null;
-    $('panel').classList.add('hidden');
-    $('unlockcard').classList.remove('hidden');
-    $('lockstate').textContent = 'locked';
-    $('lockstate').className = 'pill';
-    $('sites').innerHTML = '';
-    $('notes').textContent = '';
-    $('pass').value = '';
-    $('subtitle').textContent = reason || 'Enter the passphrase to unlock the control panel.';
-    clearTimeout(lockTimer);
-  }
-
-  function armLock() {
-    clearTimeout(lockTimer);
-    lockTimer = setTimeout(function () { lock('Locked after 10 minutes idle.'); }, AUTO_LOCK_MS);
-  }
-
-  function render() {
-    $('panel').classList.remove('hidden');
-    $('unlockcard').classList.add('hidden');
-    $('lockstate').textContent = 'unlocked';
-    $('lockstate').className = 'pill ok';
-    $('subtitle').textContent = payload.subtitle || '';
-    if (payload.title) { $('title').textContent = payload.title; $('botname').textContent = payload.title; }
-    $('notes').textContent = payload.notes || '';
-    armLock();
-
-    var sites = payload.pages || [];
-    $('sites').innerHTML = '';
-    sites.forEach(function (site) {
-      var base = tunnelUrl || '';
-      var href = base ? base + (site.path || '/') : '#';
-      var card = document.createElement('div');
-      card.className = 'site';
-      var pass = site.pass || '';
-      card.innerHTML =
-        '<b>' + esc(site.name || site.path) + '</b>' +
-        '<div class="desc">' + esc(site.desc || '') + '</div>' +
-        '<div class="acts">' +
-        '<a href="' + href + '" target="_blank" rel="noreferrer noopener">open</a>' +
-        '<button class="tiny copy" data-copy="' + esc(href) + '">copy link</button>' +
-        (pass ? '<button class="tiny reveal">show password</button><span class="pw hidden">' + esc(pass) + '</span>' : '') +
-        '</div>';
-      $('sites').appendChild(card);
+  // The runner commits tunnel.json every cycle. Cache-bust so a fresh tunnel
+  // is picked up immediately rather than from a stale edge copy.
+  fetch('tunnel.json', { cache: 'no-store' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('no tunnel.json');
+      return r.json();
+    })
+    .then(function (data) {
+      var url = (data && data.url || '').trim();
+      if (!url) throw new Error('no url');
+      setLive(url.replace(/\/$/, ''));
+    })
+    .catch(function () {
+      setDown('no live tunnel right now — the bot is between runs');
     });
-
-    Array.prototype.forEach.call(document.querySelectorAll('.copy'), function (btn) {
-      btn.onclick = function () {
-        navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(function () {
-          btn.textContent = 'copied';
-          setTimeout(function () { btn.textContent = 'copy link'; }, 1500);
-        }).catch(function () {});
-      };
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('.reveal'), function (btn) {
-      btn.onclick = function () {
-        var chip = btn.nextElementSibling;
-        chip.classList.toggle('hidden');
-        btn.textContent = chip.classList.contains('hidden') ? 'show password' : 'hide password';
-        armLock();
-      };
-    });
-  }
-
-  function esc(text) {
-    return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-
-  function loadTunnel() {
-    return fetchJson([stateUrl(), stateRawUrl()]).then(function (state) {
-      if (state && state.url) {
-        tunnelUrl = String(state.url).replace(/\/+$/, '');
-        var age = (Date.now() - Date.parse(state.updated)) / 1000;
-        $('tunnel').textContent = tunnelUrl.replace(/^https:\/\//, '');
-        $('openbot').href = tunnelUrl;
-        $('freshness').textContent = ageText(age);
-        $('freshness').className = 'pill ' + (age < 6 * 3600 ? 'ok' : 'warn');
-      } else {
-        $('tunnel').textContent = 'no tunnel published yet';
-        $('freshness').textContent = 'offline';
-        $('freshness').className = 'pill warn';
-      }
-    });
-  }
-
-  $('unlock').addEventListener('submit', function (event) {
-    event.preventDefault();
-    var passphrase = $('pass').value;
-    if (!passphrase) return;
-    $('unlockbtn').disabled = true;
-    $('unlockerr').textContent = '';
-    fetchJson([vaultUrl(), vaultRawUrl()]).then(function (vault) {
-      if (!vault || !vault.data) {
-        throw new Error('vault.json is missing from the repo');
-      }
-      if (vault.hint) { $('hint').textContent = 'Hint: ' + vault.hint; }
-      return decrypt(vault, passphrase);
-    }).then(function (data) {
-      payload = data;
-      return loadTunnel();
-    }).then(function () {
-      render();
-      $('unlockbtn').disabled = false;
-    }).catch(function (error) {
-      fails += 1;
-      $('unlockbtn').disabled = false;
-      $('pass').value = '';
-      $('unlockcard').classList.add('shake');
-      setTimeout(function () { $('unlockcard').classList.remove('shake'); }, 400);
-      if (fails >= 5) {
-        $('unlockerr').textContent = 'Too many attempts. Wait a minute.';
-        $('unlockbtn').disabled = true;
-        setTimeout(function () { $('unlockbtn').disabled = false; fails = 0; }, 60000);
-        return;
-      }
-      $('unlockerr').textContent = 'Wrong passphrase.';
-    });
-  });
-
-  $('relock').onclick = function () { lock('Locked.'); };
-
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden) { clearTimeout(lockTimer); } else { armLock(); }
-  });
-  ['mousemove', 'keydown', 'click'].forEach(function (evt) {
-    document.addEventListener(evt, function () { if (payload) armLock(); }, { passive: true });
-  });
-  window.addEventListener('beforeunload', function () { payload = null; });
-
-  fetchJson([vaultUrl(), vaultRawUrl()]).then(function (vault) {
-    $('foot').textContent = OWNER + '/' + REPO;
-    if (!vault || !vault.data) {
-      $('unlockbtn').disabled = true;
-      $('unlockerr').textContent = 'No vault.json in this repo yet — open vault-maker.html to create one.';
-      return;
-    }
-    if (vault.hint) { $('hint').textContent = 'Hint: ' + vault.hint; }
-    if (vault.demo) {
-      $('hint').textContent = (vault.hint ? 'Hint: ' + vault.hint + ' — ' : '') +
-        'this is the demo vault; regenerate it with your own passphrase.';
-    }
-  });
-  loadTunnel();
 })();
 </script>
 </body>
