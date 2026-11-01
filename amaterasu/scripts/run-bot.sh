@@ -163,11 +163,13 @@ trap cleanup EXIT
 preflight || exit 1
 
 attempt=0
+fast_fails=0
 while :; do
     remaining=$(( END_AT - $(date +%s) ))
     [ "$remaining" -lt 45 ] && break
 
     attempt=$(( attempt + 1 ))
+    attempt_started=$(date +%s)
     log "attempt $attempt: starting bot with ${remaining}s of budget left"
     notify "Amaterasu starting" "attempt $attempt, ${remaining}s budget"
 
@@ -181,6 +183,23 @@ while :; do
     fi
 
     log "attempt $attempt: bot exited with rc=$rc"
+
+    # A bot that dies within two minutes of starting will keep doing it. Six of
+    # those in a row means something is broken, and burning the rest of the
+    # budget restarting it helps nobody.
+    ran_for=$(( $(date +%s) - attempt_started ))
+    if [ "$ran_for" -lt 120 ]; then
+        fast_fails=$(( fast_fails + 1 ))
+        log "attempt $attempt: died after ${ran_for}s (fast fail $fast_fails/6)"
+        if [ "$fast_fails" -ge 6 ]; then
+            log "FATAL: six fast failures in a row — exiting instead of looping"
+            notify "Amaterasu stopped" "6 fast failures in a row; see the log"
+            exit 1
+        fi
+    else
+        fast_fails=0
+    fi
+
     notify "Amaterasu restarted" "attempt $attempt exited rc=$rc"
 
     remaining=$(( END_AT - $(date +%s) ))
@@ -190,3 +209,19 @@ done
 
 log "run finished after $attempt attempt(s)"
 notify "Amaterasu stopped" "budget exhausted after $attempt attempt(s)"
+
+# ── Log hygiene ──────────────────────────────────────────────────────────
+# Amaterasu re-logs "tunnel_monitor: keeping stable ..." every five seconds,
+# which is ~17k identical lines a day. Collapse consecutive duplicates so the
+# log stays readable and the artifact stays small.
+if [ -f "$BOT_LOG" ]; then
+    before=$(wc -l < "$BOT_LOG")
+    awk '
+        { line = $0 }
+        line == prev { n++; next }
+        { if (n > 0) printf "[%d identical line(s) collapsed]\n", n; print; prev = line; n = 0 }
+        END { if (n > 0) printf "[%d identical line(s) collapsed]\n", n }
+    ' "$BOT_LOG" > "${BOT_LOG}.dedup" && mv "${BOT_LOG}.dedup" "$BOT_LOG"
+    after=$(wc -l < "$BOT_LOG")
+    log "log trimmed: $before lines -> $after"
+fi
