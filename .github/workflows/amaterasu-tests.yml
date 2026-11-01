@@ -113,6 +113,18 @@ jobs:
           if not stamp:
               print("::error::tunnel.json has no timestamp")
               sys.exit(1)
+          # Staleness is information, not a failure: the file only refreshes
+          # while the bot is running, and it is between runs by design.
+          import datetime
+          try:
+              when = datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+              age_h = (datetime.datetime.now(datetime.timezone.utc) - when).total_seconds() / 3600
+              if age_h > 6:
+                  print(f"::notice::tunnel.json is {age_h:.1f}h old — it refreshes on the next run")
+              else:
+                  print(f"tunnel.json is {age_h:.1f}h old")
+          except Exception:
+              print("::notice::could not parse the timestamp; skipping the age check")
           print(f"state ok: {url} at {stamp}")
           open("/tmp/tunnel_url", "w").write(url)
           PY
