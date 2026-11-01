@@ -1,8 +1,8 @@
 name: Token check
 
-# Diagnoses PAT_TOKEN without printing it. Each possible result gets its own
-# step, so the answer is readable from which step ran — no job-log access
-# needed. The dispatch test starts a cheap tests run to prove write access.
+# Diagnoses P81 (and PAT_TOKEN if present) without printing either. Each
+# possible result gets its own step, so the answer is readable from which step
+# ran. The dispatch test starts a cheap tests run to prove write access.
 
 on:
   workflow_dispatch:
@@ -15,6 +15,55 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Probe P81
+        id: p81
+        env: { T: '${{ secrets.P81 }}' }
+        run: |
+          if [ -z "${T:-}" ]; then echo "code=EMPTY" >> "$GITHUB_OUTPUT"; exit 0; fi
+          code=$(curl -sS -o /tmp/b -w '%{http_code}' -H "Authorization: Bearer $T" \
+            https://api.github.com/user 2>/dev/null || echo ERR)
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: P81 -> 200 valid token
+        if: steps.p81.outputs.code == '200'
+        run: echo ok
+      - name: P81 -> 401 not a GitHub token or revoked
+        if: steps.p81.outputs.code == '401'
+        run: echo rejected
+      - name: P81 -> 403 real token, blocked
+        if: steps.p81.outputs.code == '403'
+        run: echo blocked
+      - name: P81 -> not set
+        if: steps.p81.outputs.code == 'EMPTY'
+        run: echo missing
+      - name: P81 -> unexpected
+        if: steps.p81.outputs.code != '200' && steps.p81.outputs.code != '401' && steps.p81.outputs.code != '403' && steps.p81.outputs.code != 'EMPTY'
+        run: echo unexpected
+
+      - name: Test P81 dispatch permission
+        id: disp
+        if: steps.p81.outputs.code == '200'
+        env: { T: '${{ secrets.P81 }}' }
+        run: |
+          code=$(curl -sS -o /tmp/d -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $T" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/amaterasu-tests.yml/dispatches" \
+            -d '{"ref":"main"}' 2>/dev/null || echo ERR)
+          echo "dcode=$code" >> "$GITHUB_OUTPUT"
+
+      - name: P81 dispatch -> 204 allowed
+        if: steps.disp.outputs.dcode == '204'
+        run: echo allowed
+      - name: P81 dispatch -> 403 denied
+        if: steps.disp.outputs.dcode == '403'
+        run: echo 'denied — no Actions write'
+      - name: P81 dispatch -> 404 out of scope
+        if: steps.disp.outputs.dcode == '404'
+        run: echo 'out of scope — repo not selected'
+      - name: P81 dispatch -> unexpected
+        if: steps.disp.outputs.dcode != '204' && steps.disp.outputs.dcode != '403' && steps.disp.outputs.dcode != '404' && steps.disp.outputs.dcode != ''
+        run: echo unexpected
+
       - name: Probe PAT_TOKEN
         id: pat
         env: { T: '${{ secrets.PAT_TOKEN }}' }
@@ -23,43 +72,9 @@ jobs:
           code=$(curl -sS -o /tmp/b -w '%{http_code}' -H "Authorization: Bearer $T" \
             https://api.github.com/user 2>/dev/null || echo ERR)
           echo "code=$code" >> "$GITHUB_OUTPUT"
-
       - name: PAT_TOKEN -> 200 valid token
         if: steps.pat.outputs.code == '200'
-        run: echo "PAT_TOKEN authenticates"
-      - name: PAT_TOKEN -> 401 not a GitHub token or revoked
-        if: steps.pat.outputs.code == '401'
-        run: echo "PAT_TOKEN rejected"
-      - name: PAT_TOKEN -> 403 real token, blocked
-        if: steps.pat.outputs.code == '403'
-        run: echo "PAT_TOKEN blocked"
+        run: echo ok
       - name: PAT_TOKEN -> not set
         if: steps.pat.outputs.code == 'EMPTY'
-        run: echo "PAT_TOKEN missing"
-      - name: PAT_TOKEN -> unexpected
-        if: steps.pat.outputs.code != '200' && steps.pat.outputs.code != '401' && steps.pat.outputs.code != '403' && steps.pat.outputs.code != 'EMPTY'
-        run: echo "unexpected"
-
-      - name: Test dispatch permission
-        id: disp
-        if: steps.pat.outputs.code == '200'
-        env: { T: '${{ secrets.PAT_TOKEN }}' }
-        run: |
-          code=$(curl -sS -o /tmp/d -w '%{http_code}' -X POST \
-            -H "Authorization: Bearer $T" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/amaterasu-tests.yml/dispatches" \
-            -d '{"ref":"main"}' 2>/dev/null || echo ERR)
-          echo "dcode=$code" >> "$GITHUB_OUTPUT"
-
-      - name: dispatch -> 204 allowed
-        if: steps.disp.outputs.dcode == '204'
-        run: echo "can dispatch"
-      - name: dispatch -> 403 denied
-        if: steps.disp.outputs.dcode == '403'
-        run: echo 'cannot dispatch — missing Actions write'
-      - name: dispatch -> 404 no access
-        if: steps.disp.outputs.dcode == '404'
-        run: echo 'cannot dispatch — repo not in token scope'
-      - name: dispatch -> unexpected
-        if: steps.disp.outputs.dcode != '204' && steps.disp.outputs.dcode != '403' && steps.disp.outputs.dcode != '404' && steps.disp.outputs.dcode != ''
-        run: echo "unexpected dispatch result"
+        run: echo missing
