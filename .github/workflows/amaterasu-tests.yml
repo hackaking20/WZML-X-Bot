@@ -5,13 +5,9 @@ name: Amaterasu tests
 # a restricted sandbox). Dispatch it by hand after changing a plugin.
 
 on:
+  # Manual only. A push trigger fired three runs from one batch of file edits,
+  # and nothing here needs to run unless something actually changed.
   workflow_dispatch:
-  push:
-    paths:
-      - 'amaterasu/plugins/**'
-      - 'amaterasu/web/**'
-      - 'amaterasu/cloudflare-worker/**'
-      - 'amaterasu/scripts/test-*'
 
 permissions:
   contents: read
