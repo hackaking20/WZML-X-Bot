@@ -1,5 +1,8 @@
-=== diagnose 2026-11-01T10:50:46Z ===
+=== diagnose 2026-11-01T11:10:22Z ===
+worker: https://wzml-stream.joshifreefire-joshi.workers.dev
+worker /health -> {"error":"Unexpected token 'e', \"error code: 1016\n\" is not valid JSON","bot_responding":false,"tunnel_connected":false}
 tunnel.json url: https://tail-specialties-dominant-apparel.trycloudflare.com
+probing: https://tail-specialties-dominant-apparel.trycloudflare.com
 
 --- GET / -> 000ERR
 
