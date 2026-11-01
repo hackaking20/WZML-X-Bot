@@ -36,7 +36,20 @@ class FakeTgClient:
     helper_bots = {}
     helper_loads = {}
     helper_bot_clients = {}
+    stream_clients = {}
+    stream_loads = {}
+    stream_prewarm = {}
     started = []
+    streams_started = 0
+
+    @classmethod
+    async def start_stream_clients(cls):
+        cls.streams_started += 1
+        cls.stream_clients[0] = FakeClient("bot")
+        cls.stream_clients[1] = FakeClient("stream1")
+        cls.stream_loads[0] = 0
+        cls.stream_loads[1] = 0
+        cls.stream_prewarm = {0: True, 1: True}
 
     @classmethod
     async def start_hclient(cls, no, token, proxy=None):
@@ -196,6 +209,24 @@ async def main():
     card = helpers._card()
     for needle in ("Helper connections", "configured: 3", "auto: on"):
         check(f"card shows {needle!r}", needle in card, card[:120])
+
+    # 9b. wake raises helpers AND stream clients
+    await helpers.stop_all("test")
+    FakeTgClient.stream_clients = {0: FakeClient("bot")}
+    FakeTgClient.stream_prewarm = {}
+    FakeTgClient.streams_started = 0
+    result = await helpers.wake("test")
+    check("wake starts helpers", result["helpers"] == 3, str(result))
+    check("wake starts stream clients", result["streams"] == 1 and FakeTgClient.streams_started == 1, str(result))
+    check("wake marks awake", helpers._state["awake"] is True)
+
+    # 9c. sleep drops both but keeps the bot's own client
+    result = await helpers.sleep("test")
+    check("sleep drops helpers", result["helpers"] >= 1, str(result))
+    check("sleep drops stream clients", result["streams"] == 1, str(result))
+    check("sleep keeps the bot client", 0 in FakeTgClient.stream_clients, str(FakeTgClient.stream_clients))
+    check("sleep clears the pre-warm map", FakeTgClient.stream_prewarm == {})
+    check("sleep marks asleep", helpers._state["awake"] is False)
 
     # 10. unload puts the bot core back
     helpers.remove_hooks()
