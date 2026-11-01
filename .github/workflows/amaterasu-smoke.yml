@@ -47,11 +47,14 @@ jobs:
           DISABLE_ENCODE: 'True'
           FFMPEG_HW_ACCEL: 'none'
         run: |
-          set -uo pipefail
           mkdir -p diagnostics
           REPORT=diagnostics/smoke.log
           : > "$REPORT"
-          say() { echo "$*" | tee -a "$REPORT"; }
+          # capture everything from here on, so the report exists even if a
+          # later command dies
+          exec > >(tee -a "$REPORT") 2>&1
+          set -u
+          say() { echo "$*"; }
 
           APP="$GITHUB_WORKSPACE/app"
           say "=== smoke $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
@@ -81,7 +84,7 @@ jobs:
             fi
             say ""
             say "--- $method $path -> $code"
-            head -c 800 "$out" | tr -d '\r' | sed 's/^/    /' | tee -a "$REPORT"
+            head -c 800 "$out" | tr -d '\r' | sed 's/^/    /' 
             say ""
             rm -f "$out"
           }
@@ -96,10 +99,10 @@ jobs:
 
           say ""
           say "=== bot output (last 200 lines) ==="
-          tail -200 "$APP/smoke.out" | tee -a "$REPORT" || true
+          tail -200 "$APP/smoke.out" || true
           say ""
           say "=== bot log.txt (last 120 lines) ==="
-          tail -120 "$APP/log.txt" 2>/dev/null | tee -a "$REPORT" || say "no log.txt"
+          tail -120 "$APP/log.txt" 2>/dev/null || say "no log.txt"
 
           kill "$(cat /tmp/bot.pid)" 2>/dev/null || true
           sleep 2
