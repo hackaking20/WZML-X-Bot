@@ -407,8 +407,11 @@ def _probe_blocking(url: str) -> dict:
     options.pop("progress_hooks", None)
     options.pop("outtmpl", None)
     options.pop("max_filesize", None)
-    options["noplaylist"] = False
-    options["extract_flat"] = "in_playlist"
+    # A watch URL with no list= is a single video. Without this, yt-dlp happily
+    # expands it into the 500-entry "Mix" playlist YouTube serves alongside it.
+    wants_playlist = "list=" in url
+    options["noplaylist"] = not wants_playlist
+    options["extract_flat"] = "in_playlist" if wants_playlist else False
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
 
