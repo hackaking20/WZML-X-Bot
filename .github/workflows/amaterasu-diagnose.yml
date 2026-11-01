@@ -1,0 +1,80 @@
+name: Diagnose
+
+# Exercises the live bot end to end and commits what it found to
+# diagnostics/report.txt, so the result can be read without job-log access.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe every endpoint
+        run: |
+          set -uo pipefail
+          mkdir -p diagnostics
+          REPORT=diagnostics/report.txt
+          : > "$REPORT"
+
+          say() { echo "$*" | tee -a "$REPORT"; }
+
+          say "=== diagnose $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+
+          url=$(python3 -c "import json;print(json.load(open('docs/tunnel.json')).get('url',''))" 2>/dev/null || echo "")
+          say "tunnel.json url: ${url:-none}"
+          if [ -z "$url" ]; then say "no url recorded — aborting"; exit 0; fi
+
+          hit() {
+            local label="$1" path="$2" method="${3:-GET}" data="${4:-}"
+            local out code
+            out=$(mktemp)
+            if [ "$method" = "POST" ]; then
+              code=$(curl -sS -o "$out" -w '%{http_code}' -m 45 -X POST \
+                -H 'content-type: application/json' -d "$data" "$url$path" || echo ERR)
+            else
+              code=$(curl -sS -o "$out" -w '%{http_code}' -m 45 "$url$path" || echo ERR)
+            fi
+            say ""
+            say "--- $method $path -> $code"
+            head -c 700 "$out" | tr -d '\r' | sed 's/^/    /' | tee -a "$REPORT"
+            say ""
+            rm -f "$out"
+          }
+
+          hit "root"      "/"
+          hit "health"    "/health"
+          hit "webdl ui"  "/webdl"
+          hit "webdl api" "/webdl/api/info"
+          hit "links"     "/links"
+          hit "login"     "/login"
+
+          say ""
+          say "=== probe a real video ==="
+          hit "probe" "/webdl/api/probe" POST '{"url":"https://www.youtube.com/watch"}'
+
+          say ""
+          say "=== probe a plain mp4 (no yt-dlp involved) ==="
+          hit "probe mp4" "/webdl/api/probe" POST '{"url":"https://download.samplelib.com/mp4/sample-5s.mp4"}'
+
+          say ""
+          say "=== done ==="
+
+      - name: Commit the report
+        run: |
+          set -uo pipefail
+          git config user.name "diagnose"
+          git config user.email "diagnose@users.noreply.github.com"
+          git add diagnostics/report.txt
+          if git diff --cached --quiet; then
+            echo "no report change"
+            exit 0
+          fi
+          git commit -q -m "diagnose: $(date -u +%H:%MZ)"
+          git push -q origin HEAD && echo "report committed"
