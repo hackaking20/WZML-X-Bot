@@ -47,7 +47,7 @@
     <div class="d">Every page this bot serves, with its password — asks for the password</div>
   </a>
 
-  <div class="state"><span class="dot wait" id="dot"></span><span id="state">checking the tunnel…</span></div>
+  <div class="state"><span class="dot wait" id="dot"></span><span id="state">looking for a tunnel…</span></div>
 </div>
 
 <script>
@@ -57,62 +57,83 @@
   var dot = document.getElementById('dot');
   var state = document.getElementById('state');
 
-  function dotClass(kind) { dot.className = 'dot ' + kind; }
+  var POLL_MS = 10000;        // look for a new link every 10 seconds
+  var DEAD_AFTER_MS = 60000;  // show "no tunnel" after a minute of silence
+
+  var current = '';           // the URL the doors point at
+  var lastOk = 0;             // when the tunnel last answered
+
+  function paint(kind, text) {
+    dot.className = 'dot ' + kind;
+    state.textContent = text;
+  }
 
   function open(base) {
     web.href = base + '/webdl';
     links.href = base + '/links';
     web.classList.remove('off');
     links.classList.remove('off');
-    dotClass('live');
-    state.textContent = 'tunnel ' + base.replace('https://', '');
   }
 
-  function shut(message) {
+  function shut() {
     web.classList.add('off');
     links.classList.add('off');
-    dotClass('down');
-    state.textContent = message;
   }
 
-  // Probe the tunnel from the browser. A no-cors request resolves once the
-  // host answers at all (any status) and rejects if it cannot be reached, so
-  // this distinguishes "up" from "dead" without needing CORS headers.
   function probe(base, done) {
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, 7000);
-    fetch(base + '/health', { mode: 'no-cors', signal: controller.signal, cache: 'no-store' })
+    fetch(base + '/', { mode: 'no-cors', signal: controller.signal, cache: 'no-store' })
       .then(function () { clearTimeout(timer); done(true); })
       .catch(function () { clearTimeout(timer); done(false); });
   }
 
-  fetch('tunnel.json', { cache: 'no-store' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('no tunnel.json');
-      return r.json();
-    })
-    .then(function (data) {
-      var url = (data && data.url || '').trim().replace(/\/$/, '');
-      if (!url) throw new Error('no url');
+  function tick() {
+    // 1. has the published URL changed
+    fetch('tunnel.json', { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('no tunnel.json');
+        return r.json();
+      })
+      .then(function (data) {
+        var url = ((data && data.url) || '').trim().replace(/\/$/, '');
+        if (!url) { throw new Error('empty'); }
 
-      var checked = '';
-      if (data && data.checked) { checked = ' (last checked ' + data.checked + ')'; }
-      state.textContent = 'probing the tunnel' + checked;
-      dotClass('wait');
-
-      probe(url, function (alive) {
-        if (alive) { open(url); return; }
-        // the file may name a tunnel that has since died
-        if (data && data.alive === false) {
-          shut('tunnel is down — the bot is between runs');
+        if (url !== current) {
+          current = url;
+          paint('wait', 'new tunnel found — checking ' + url.replace('https://', ''));
+        }
+        return url;
+      })
+      .then(function (url) {
+        // 2. is it answering
+        probe(url, function (alive) {
+          if (alive) {
+            lastOk = Date.now();
+            open(url);
+            paint('live', 'tunnel ' + url.replace('https://', ''));
+            return;
+          }
+          if (Date.now() - lastOk > DEAD_AFTER_MS) {
+            shut();
+            paint('down', 'no tunnel running or serving');
+          } else {
+            paint('wait', 'tunnel not answering — retrying');
+          }
+        });
+      })
+      .catch(function () {
+        if (Date.now() - lastOk > DEAD_AFTER_MS) {
+          shut();
+          paint('down', 'no tunnel running or serving');
         } else {
-          shut('tunnel did not answer — the bot is probably between runs');
+          paint('wait', 'looking for a tunnel…');
         }
       });
-    })
-    .catch(function () {
-      shut('no tunnel recorded yet — the bot has not published one');
-    });
+  }
+
+  tick();
+  setInterval(tick, POLL_MS);
 })();
 </script>
 </body>
