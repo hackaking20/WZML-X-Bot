@@ -1,82 +1,80 @@
 name: Token check
 
-# Validates the tokens available to this repo without touching the bot.
-# Reports, for each candidate: is it a valid token, whose is it, can it read
-# Actions, and can it dispatch a workflow. Never prints the token itself.
+# Answers four questions about each candidate token, one step per question, so
+# the result is readable without job-log access:
+#   is it set / is it valid / can it read Actions / can it dispatch
+# Never prints a token. The dispatch test starts a cheap tests run.
 
 on:
   workflow_dispatch:
     inputs:
       dispatch_test:
-        description: 'Also test the dispatch permission (starts a cheap tests run)'
+        description: 'Test the dispatch permission too (starts a tests run)'
         required: false
-        default: 'false'
+        default: 'true'
 
 permissions:
   contents: read
 
 jobs:
-  check:
+  p81:
+    name: P81
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Inspect tokens
-        env:
-          REPO: ${{ github.repository }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          P81: ${{ secrets.P81 }}
-          DISPATCH_TEST: ${{ github.event.inputs.dispatch_test || 'false' }}
+      - name: P81 is set
+        env: { T: '${{ secrets.P81 }}' }
         run: |
-          set -uo pipefail
-          echo "repo: $REPO"
-          echo
+          [ -n "$T" ] || { echo "P81 is empty or missing"; exit 1; }
+          echo "P81 present, length ${#T}"
 
-          probe() {
-            local label="$1" token="$2"
-            echo "── $label ──────────────────────────────────────────"
-            if [ -z "$token" ]; then
-              echo "  not set (empty or missing)"
-              echo
-              return
-            fi
-            echo "  present: yes (length ${#token}, prefix '${token:0:4}…')"
+      - name: P81 is a valid token
+        if: always()
+        env: { T: '${{ secrets.P81 }}' }
+        run: |
+          [ -n "$T" ] || exit 1
+          code=$(curl -sS -o /tmp/b -w '%{http_code}' -H "Authorization: Bearer $T" https://api.github.com/user)
+          echo "GET /user -> $code"
+          [ "$code" = "200" ] || { cat /tmp/b; exit 1; }
 
-            local body code
-            body=$(mktemp)
-            code=$(curl -sS -o "$body" -w '%{http_code}' \
-              -H "Authorization: Bearer $token" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/user" || echo ERR)
-            echo "  GET /user            -> $code"
-            if [ "$code" = "200" ]; then
-              echo "     identity: $(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("login"))' "$body")"
-              echo "     token type: $(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print("fine-grained/bot" if str(d.get("id","")).startswith("") else "unknown")' "$body")"
-            else
-              echo "     body: $(head -c 200 "$body")"
-            fi
+      - name: P81 can read Actions
+        if: always()
+        env: { T: '${{ secrets.P81 }}' }
+        run: |
+          [ -n "$T" ] || exit 1
+          code=$(curl -sS -o /tmp/b -w '%{http_code}' -H "Authorization: Bearer $T" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows")
+          echo "GET actions/workflows -> $code"
+          [ "$code" = "200" ] || { cat /tmp/b; exit 1; }
 
-            code=$(curl -sS -o "$body" -w '%{http_code}' \
-              -H "Authorization: Bearer $token" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/actions/workflows" || echo ERR)
-            echo "  GET actions/workflows -> $code  (read permission)"
+      - name: P81 can dispatch a workflow
+        if: always() && github.event.inputs.dispatch_test == 'true'
+        env: { T: '${{ secrets.P81 }}' }
+        run: |
+          [ -n "$T" ] || exit 1
+          code=$(curl -sS -o /tmp/b -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $T" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/amaterasu-tests.yml/dispatches" \
+            -d '{"ref":"main"}')
+          echo "POST dispatch -> $code (204 = allowed)"
+          [ "$code" = "204" ] || { cat /tmp/b; exit 1; }
 
-            if [ "$DISPATCH_TEST" = "true" ]; then
-              code=$(curl -sS -o "$body" -w '%{http_code}' -X POST \
-                -H "Authorization: Bearer $token" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/$REPO/actions/workflows/amaterasu-tests.yml/dispatches" \
-                -d '{"ref":"main"}' || echo ERR)
-              echo "  POST dispatch        -> $code  (write permission; 204 = allowed)"
-              [ "$code" != "204" ] && echo "     body: $(head -c 200 "$body")"
-            else
-              echo "  POST dispatch        -> skipped (dispatch_test=false)"
-            fi
-            rm -f "$body"
-            echo
-          }
+  pat:
+    name: PAT_TOKEN
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: PAT_TOKEN is set
+        env: { T: '${{ secrets.PAT_TOKEN }}' }
+        run: |
+          [ -n "$T" ] || { echo "PAT_TOKEN is empty or missing (not an error — the chain just stops)"; exit 1; }
+          echo "PAT_TOKEN present, length ${#T}"
 
-          probe "PAT_TOKEN" "${PAT_TOKEN:-}"
-          probe "P81" "${P81:-}"
-
-          echo "Reminder: the bot's chain step uses secrets.PAT_TOKEN."
+      - name: PAT_TOKEN is a valid token
+        if: always()
+        env: { T: '${{ secrets.PAT_TOKEN }}' }
+        run: |
+          [ -n "$T" ] || exit 1
+          code=$(curl -sS -o /tmp/b -w '%{http_code}' -H "Authorization: Bearer $T" https://api.github.com/user)
+          echo "GET /user -> $code"
+          [ "$code" = "200" ] || { cat /tmp/b; exit 1; }
