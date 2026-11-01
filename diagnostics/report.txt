@@ -1,0 +1,32 @@
+=== diagnose 2026-11-01T10:50:46Z ===
+tunnel.json url: https://tail-specialties-dominant-apparel.trycloudflare.com
+
+--- GET / -> 000ERR
+
+
+--- GET /health -> 000ERR
+
+
+--- GET /webdl -> 000ERR
+
+
+--- GET /webdl/api/info -> 000ERR
+
+
+--- GET /links -> 000ERR
+
+
+--- GET /login -> 000ERR
+
+
+=== probe a real video ===
+
+--- POST /webdl/api/probe -> 000ERR
+
+
+=== probe a plain mp4 (no yt-dlp involved) ===
+
+--- POST /webdl/api/probe -> 000ERR
+
+
+=== done ===
