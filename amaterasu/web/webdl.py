@@ -81,6 +81,44 @@ def _password() -> str:
     return os.environ.get("WEBDL_PASS", "").strip()
 
 
+def _web_password() -> str:
+    """Password for the /links page.
+
+    Order: WEB_ACCESS_PASSWORD (the bot's own web login) -> WEBDL_PASS ->
+    a value set with /setwebpass in Mongo -> the default "joshi".
+    """
+    for name in ("WEB_ACCESS_PASSWORD", "WEBDL_PASS"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    stored = _stored_password()
+    return stored or "joshi"
+
+
+def _stored_password() -> str:
+    """Password saved by /setwebpass, read from the shared database."""
+    now = time.time()
+    if _PASS_CACHE["value"] and now - _PASS_CACHE["at"] < 5:
+        return _PASS_CACHE["value"]
+    try:
+        from pymongo import MongoClient
+
+        url = os.environ.get("DATABASE_URL", "").strip()
+        if not url:
+            return ""
+        with MongoClient(url, serverSelectionTimeoutMS=4000) as client:
+            doc = client["webpass"]["config"].find_one({"_id": "web_access_password"})
+        value = (doc or {}).get("value", "") or ""
+        _PASS_CACHE["value"] = value
+        _PASS_CACHE["at"] = now
+        return value
+    except Exception:
+        return ""
+
+
+_PASS_CACHE = {"value": "", "at": 0.0}
+
+
 def _origins() -> list:
     raw = os.environ.get("WEBDL_ORIGINS", "").strip()
     if raw:
@@ -760,6 +798,94 @@ def register(app) -> None:
             shutil.rmtree(job.get("dir", ""), ignore_errors=True)
             _ACTIVE = max(0, _ACTIVE - 1)
         return _reply(request, {"state": job["state"]})
+
+    # ── /links: every page this bot serves, with its password ──────────
+    def _links_html(unlocked: bool, error: str = "", request=None) -> str:
+        import html as _html
+
+        # Prefer the live public URL; fall back to whatever the caller used.
+        base = os.environ.get("BASE_URL", "").strip().rstrip("/")
+        if not base and request is not None:
+            try:
+                base = str(request.base_url).rstrip("/")
+            except Exception:
+                base = ""
+
+        pages = [
+            ("Web downloader", "/webdl", "the full downloader app"),
+            ("Main web UI", "/", "bot dashboard and login"),
+            ("Session generator", "/app/session-generator", "make a user session string"),
+            ("FileToLink", "/app/", "stream files by link (needs STREAM_PASS)"),
+            ("qBittorrent", "/qbit/", "torrent client (pass is per run, see the log)"),
+            ("SABnzbd", "/nzb/", "usenet client (pass is per run, see the log)"),
+        ]
+        pw = _web_password()
+        rows = ""
+        for name, path, note in pages:
+            url = f"{base}{path}" if base else path
+            shown = _html.escape(pw if path not in ("/qbit/", "/nzb/") else "per-run")
+            rows += (
+                f'<tr><td><a href="{_html.escape(url)}" target="_blank" rel="noopener">'
+                f'{_html.escape(name)}</a><div class="note">{_html.escape(note)}</div></td>'
+                f'<td class="pw">{shown}</td></tr>'
+            )
+
+        if not unlocked:
+            return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pages</title><style>
+body{{background:#0f1115;color:#e6e6e6;font:15px/1.5 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0}}
+.card{{background:#171a21;padding:28px 30px;border-radius:14px;width:min(360px,92vw);border:1px solid #23262f}}
+h1{{font-size:17px;margin:0 0 6px}}p{{color:#8b93a7;margin:0 0 18px;font-size:13px}}
+input{{width:100%;padding:11px;border-radius:9px;border:1px solid #2b2f3a;background:#0f1115;color:#e6e6e6;font-size:15px}}
+button{{width:100%;margin-top:12px;padding:11px;border:0;border-radius:9px;background:#3b6cf6;color:#fff;font-size:15px;cursor:pointer}}
+.err{{color:#ff7a7a;font-size:13px;margin-top:10px}}
+</style></head><body><form class="card" method="post" action="/links">
+<h1>Pages &amp; passwords</h1><p>Enter the web password.</p>
+<input type="password" name="password" autofocus autocomplete="current-password">
+<button type="submit">Unlock</button>{f'<div class="err">{_html.escape(error)}</div>' if error else ''}
+</form></body></html>"""
+
+        return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pages &amp; passwords</title><style>
+body{{background:#0f1115;color:#e6e6e6;font:15px/1.6 system-ui,sans-serif;margin:0;padding:28px 18px}}
+.wrap{{max-width:760px;margin:0 auto}}
+h1{{font-size:19px;margin:0 0 4px}}p.sub{{color:#8b93a7;font-size:13px;margin:0 0 22px}}
+table{{width:100%;border-collapse:collapse;background:#171a21;border-radius:12px;overflow:hidden}}
+td{{padding:13px 16px;border-bottom:1px solid #23262f;vertical-align:top}}
+tr:last-child td{{border-bottom:0}}
+a{{color:#7aa2ff;text-decoration:none}}a:hover{{text-decoration:underline}}
+.note{{color:#8b93a7;font-size:12px;margin-top:2px}}
+.pw{{font-family:ui-monospace,monospace;color:#8ef0b8;text-align:right;white-space:nowrap}}
+</style></head><body><div class="wrap">
+<h1>Pages &amp; passwords</h1><p class="sub">Live tunnel: {_html.escape(base) or "unknown"}</p>
+<table>{rows}</table></div></body></html>"""
+
+    @app.get("/links", response_class=HTMLResponse)
+    async def links_page(request: Request):
+        from hmac import compare_digest
+
+        cookie = request.cookies.get("links_session", "")
+        unlocked = bool(cookie) and compare_digest(cookie, _web_password())
+        return HTMLResponse(_links_html(unlocked, request=request))
+
+    @app.post("/links", response_class=HTMLResponse)
+    async def links_login(request: Request):
+        from hmac import compare_digest
+
+        form = await request.form()
+        supplied = str(form.get("password", "")).strip()
+        expected = _web_password()
+        if supplied and compare_digest(supplied, expected):
+            response = HTMLResponse(_links_html(True, request=request))
+            response.set_cookie(
+                "links_session", expected, max_age=60 * 60 * 12,
+                httponly=True, samesite="lax", secure=True,
+            )
+            return response
+        _note_failure(_client_ip(request))
+        return HTMLResponse(_links_html(False, "Wrong password.", request=request), status_code=401)
 
     if not _STARTED:
         _STARTED = True
