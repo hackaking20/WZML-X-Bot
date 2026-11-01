@@ -799,6 +799,22 @@ def register(app) -> None:
             _ACTIVE = max(0, _ACTIVE - 1)
         return _reply(request, {"state": job["state"]})
 
+    @app.get("/api/tunnel")
+    async def tunnel_info():
+        """The bot's own public URL, straight from its config.
+
+        Far more reliable than scraping the log for a hostname, and it is the
+        only thing the supervisor needs to keep tunnel.json current.
+        """
+        import datetime as _dt
+
+        return {
+            "url": os.environ.get("BASE_URL", "").strip().rstrip("/"),
+            "updated": _dt.datetime.now(_dt.timezone.utc)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z"),
+        }
+
     # ── /links: every page this bot serves, with its password ──────────
     def _links_html(unlocked: bool, error: str = "", request=None) -> str:
         import html as _html
