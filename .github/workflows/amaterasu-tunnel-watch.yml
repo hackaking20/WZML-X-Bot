@@ -62,14 +62,20 @@ jobs:
           fi
           echo "probing $url"
 
-          code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 --retry 2 --retry-delay 3 "$url/health" || echo 000)
-          echo "health -> $code"
+          # Liveness is "did the host answer at all". A 404 or a 401 still
+          # proves the tunnel is up; only a connection failure or a Cloudflare
+          # origin error means the bot behind it is gone.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "$url/" || echo 000)
+          echo "GET / -> $code"
 
-          if [ "$code" = "200" ] || [ "$code" = "401" ] || [ "$code" = "403" ]; then
-            alive=true
-          else
-            alive=false
-          fi
+          case "$code" in
+            000|502|503|504|520|521|522|523|524|1033)
+              alive=false
+              ;;
+            *)
+              alive=true
+              ;;
+          esac
           echo "alive=$alive"
 
           python3 - "$docs" "$alive" <<'PY'
