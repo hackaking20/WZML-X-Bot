@@ -1,0 +1,98 @@
+name: Tunnel watch
+
+# Keeps the homepage honest between bot runs.
+#
+# 1. If the harness copy of tunnel.json is newer than the docs copy, sync it.
+# 2. Health-check the live URL.
+# 3. Record alive/checked in docs/tunnel.json and commit — but only when
+#    something actually changed, so a healthy tunnel produces no commits.
+#
+# The page also probes the tunnel itself in the browser, so a dead link greys
+# out immediately even before this runs.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tunnel-watch
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync, probe and record
+        run: |
+          set -uo pipefail
+
+          harness=amaterasu/tunnel.json
+          docs=docs/tunnel.json
+          [ -f "$harness" ] || { echo "no harness tunnel.json"; exit 0; }
+          [ -f "$docs" ] || echo '{}' > "$docs"
+
+          python3 - "$harness" "$docs" <<'PY'
+          import json, sys
+
+          harness_path, docs_path = sys.argv[1], sys.argv[2]
+          harness = json.load(open(harness_path)) if __import__("os").path.exists(harness_path) else {}
+          docs = json.load(open(docs_path)) if __import__("os").path.exists(docs_path) else {}
+
+          # the harness copy is written by the run that owns the tunnel
+          if harness.get("updated", "") > docs.get("updated", ""):
+              docs["url"] = harness.get("url", "")
+              docs["updated"] = harness.get("updated", "")
+              print(f"adopted newer tunnel from the harness: {docs['url']}")
+
+          open(docs_path, "w").write(json.dumps(docs, indent=2) + "\n")
+          print(docs.get("url", "none"))
+          PY
+
+          url=$(python3 -c "import json;print(json.load(open('$docs')).get('url',''))")
+          if [ -z "$url" ]; then
+            echo "::notice::no tunnel URL recorded yet"
+            exit 0
+          fi
+          echo "probing $url"
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 --retry 2 --retry-delay 3 "$url/health" || echo 000)
+          echo "health -> $code"
+
+          if [ "$code" = "200" ] || [ "$code" = "401" ] || [ "$code" = "403" ]; then
+            alive=true
+          else
+            alive=false
+          fi
+          echo "alive=$alive"
+
+          python3 - "$docs" "$alive" <<'PY'
+          import datetime, json, sys
+
+          path, alive = sys.argv[1], sys.argv[2] == "true"
+          data = json.load(open(path))
+          data["alive"] = alive
+          data["checked"] = (
+              datetime.datetime.now(datetime.timezone.utc)
+              .isoformat(timespec="seconds").replace("+00:00", "Z")
+          )
+          open(path, "w").write(json.dumps(data, indent=2) + "\n")
+          print("recorded:", data["alive"], "at", data["checked"])
+          PY
+
+          if git diff --quiet -- "$docs"; then
+            echo "no change — nothing to commit"
+            exit 0
+          fi
+
+          git config user.name "tunnel-watch"
+          git config user.email "watch@users.noreply.github.com"
+          git add "$docs"
+          git commit -q -m "tunnel: $( [ "$alive" = true ] && echo alive || echo down ) at $(date -u +%H:%MZ )"
+          git push -q origin HEAD && echo "committed"
