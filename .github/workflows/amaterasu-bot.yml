@@ -1,10 +1,12 @@
 name: Amaterasu bot (harness)
 
-# Runs Amaterasu on a throwaway GitHub Actions runner.
+# Runs Amaterasu on a throwaway GitHub Actions runner, inside a daytime window
+# only: 06:00–21:00 IST (00:30–15:30 UTC).
 #
-# Every run clones upstream fresh, installs the toolchain, boots the bot, and
-# dies with the runner. State that survives lives in MongoDB, not on disk.
-# Configure it with repository secrets (see README.md).
+# Runs chain into each other: when one finishes, the last step dispatches the
+# next, so the bot is continuous inside the window and stops at the boundary.
+# The chain needs a PAT_TOKEN secret — a workflow dispatched with the built-in
+# GITHUB_TOKEN does not start another run. Without it, only the cron fires.
 
 on:
   workflow_dispatch:
@@ -12,46 +14,80 @@ on:
       minutes:
         description: 'Run length in minutes (max 330)'
         required: false
-        default: '290'
+        default: '285'
+      force:
+        description: 'Ignore the 06:00-21:00 IST window (true/false)'
+        required: false
+        default: 'false'
   schedule:
-    # Every 5 hours. GitHub's scheduler can be 5-20 minutes late under load.
-    - cron: '0 */5 * * *'
+    # 06:00 IST — start the day.
+    - cron: '30 0 * * *'
+    # 13:00 IST — restart if the chain broke overnight or a run died early.
+    - cron: '30 7 * * *'
 
-# A new run kills the previous one. That is what keeps the bot "always on":
-# each run hands the torch to the next.
 concurrency:
   group: amaterasu-runner
   cancel-in-progress: true
 
 permissions:
-  # write, so the run can commit tunnel.json for the GitHub Pages redirect
   contents: write
 
 jobs:
   bot:
     name: Run Amaterasu
     runs-on: ubuntu-24.04
-    # Hard ceiling for GitHub-hosted runners is 360; stay under it.
     timeout-minutes: 350
 
     steps:
       - name: Checkout harness repo
         uses: actions/checkout@v4
 
+      - name: Time window (06:00-21:00 IST)
+        id: window
+        run: |
+          MIN=$(( ( $(date -u +%s) + 19800 ) % 86400 / 60 ))
+          IST=$(TZ=Asia/Kolkata date '+%H:%M')
+          echo "IST now: $IST (minute-of-day $MIN)"
+          if [ "$MIN" -ge 360 ] && [ "$MIN" -lt 1260 ]; then
+            echo "inside=1" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.force }}" = "true" ]; then
+            echo "::warning::outside the window but force=true — starting anyway"
+            echo "inside=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "inside=0" >> "$GITHUB_OUTPUT"
+            echo "::notice::outside 06:00-21:00 IST — not starting"
+          fi
+
       - name: Runner diagnostics
+        if: steps.window.outputs.inside == '1'
         run: |
           echo "Disk:"; df -h / /tmp | sed 's/^/  /'
           echo "CPU: $(nproc) cores, RAM: $(free -h | awk '/^Mem:/{print $2}')"
 
+      - name: Preflight credentials
+        if: steps.window.outputs.inside == '1'
+        env:
+          APP_DIR: ${{ runner.temp }}/preflight
+          PREFLIGHT_ONLY: '1'
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_API: ${{ secrets.TELEGRAM_API }}
+          TELEGRAM_HASH: ${{ secrets.TELEGRAM_HASH }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          USER_SESSION_STRING: ${{ secrets.USER_SESSION_STRING }}
+        run: bash amaterasu/scripts/run-bot.sh
+
       - name: Install toolchain and Python env
+        if: steps.window.outputs.inside == '1'
         env:
           AMATERASU_REPO: ${{ vars.AMATERASU_REPO }}
           AMATERASU_REF: ${{ vars.AMATERASU_REF }}
         run: bash amaterasu/scripts/setup-runner.sh
 
       - name: Run Amaterasu
+        if: steps.window.outputs.inside == '1'
         env:
-          BOT_MINUTES: ${{ github.event.inputs.minutes || '290' }}
+          BOT_MINUTES: ${{ github.event.inputs.minutes || '285' }}
 
           # ── Required ────────────────────────────────────────────────────
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
@@ -67,13 +103,8 @@ jobs:
           LOG_CHAT_ID: ${{ secrets.LOG_CHAT_ID }}
 
           # ── Harness knobs ───────────────────────────────────────────────
-          # Cloudflare Worker that gives you one stable URL. Leave both empty
-          # to use the rotating trycloudflare.com URL the bot prints instead.
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
-          # Off by default: a machine commit every five hours is visible
-          # activity in the repo, and the hub is optional. Set to '1' only if
-          # you actually use the Pages hub.
           PAGES_PUBLISH: '0'
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
 
@@ -84,23 +115,26 @@ jobs:
           CLOUDFLARE_TUNNEL_ENABLED: 'True'
           CLOUDFLARE_TUNNEL_AUTO_URL: 'True'
           CLOUDFLARE_TUNNEL_TARGET: 'http://127.0.0.1:8080'
-          # The runner is disposable, so never let the bot git-pull over itself.
           AUTO_UPDATE: 'False'
           UPDATE_PKGS: 'False'
-          # JDownloader wants a Java install plus a ~150 MB download per boot;
-          # SABnzbd needs an apt package that is fiddly here. Both are off by
-          # default. Flip to False in a repository *variable* if you want them.
-          DISABLE_JD: 'True'
+
+          # ── Nothing runs unless it is being used ────────────────────────
+          LAZY_CONNECTIONS: '1'
+          HELPER_AUTO: '1'
+          HELPER_IDLE_MINUTES: '10'
+
+          # ── Engines off: less RAM, less CPU, fewer failure modes ────────
+          DISABLE_TORRENTS: 'True'
           DISABLE_NZB: 'True'
-          # ffmpeg lists h264_nvenc as compiled in even with no NVIDIA GPU,
-          # so 'auto' detection claims hardware encoding on a runner and then
-          # fails at encode time. Force software.
+          DISABLE_JD: 'True'
+          DISABLE_ENCODE: 'True'
           FFMPEG_HW_ACCEL: 'none'
 
         run: bash amaterasu/scripts/run-bot.sh
 
       - name: Upload bot log
-        if: always()
+        # only when something went wrong — no point storing 5 logs a day
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: amaterasu-log
@@ -109,3 +143,28 @@ jobs:
             app/rlog.txt
           if-no-files-found: ignore
           retention-days: 3
+
+      - name: Chain the next run
+        if: always() && steps.window.outputs.inside == '1'
+        env:
+          PAT: ${{ secrets.PAT_TOKEN }}
+          MINUTES: ${{ github.event.inputs.minutes || '285' }}
+        run: |
+          MIN=$(( ( $(date -u +%s) + 19800 ) % 86400 / 60 ))
+          NEXT_END=$(( MIN + MINUTES + 20 ))
+          echo "IST minute-of-day now: $MIN; next run would end at $NEXT_END (window closes 1260)"
+          if [ "$NEXT_END" -gt 1260 ]; then
+            echo "::notice::window closed — not chaining. Next start is 06:00 IST via cron."
+            exit 0
+          fi
+          if [ -z "${PAT:-}" ]; then
+            echo "::warning::PAT_TOKEN is not set, so the chain stops here. Add a fine-grained PAT with Actions: write to keep runs continuous; the cron will restart at 06:00 IST."
+            exit 0
+          fi
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${PAT}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/amaterasu-bot.yml/dispatches" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"minutes\":\"${MINUTES}\",\"force\":\"false\"}}" \
+            && echo "dispatched the next run"
