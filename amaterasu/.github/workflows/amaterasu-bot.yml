@@ -64,6 +64,19 @@ jobs:
           echo "Disk:"; df -h / /tmp | sed 's/^/  /'
           echo "CPU: $(nproc) cores, RAM: $(free -h | awk '/^Mem:/{print $2}')"
 
+      - name: Preflight credentials
+        if: steps.window.outputs.inside == '1'
+        env:
+          APP_DIR: ${{ runner.temp }}/preflight
+          PREFLIGHT_ONLY: '1'
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TELEGRAM_API: ${{ secrets.TELEGRAM_API }}
+          TELEGRAM_HASH: ${{ secrets.TELEGRAM_HASH }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          USER_SESSION_STRING: ${{ secrets.USER_SESSION_STRING }}
+        run: bash amaterasu/scripts/run-bot.sh
+
       - name: Install toolchain and Python env
         if: steps.window.outputs.inside == '1'
         env:
