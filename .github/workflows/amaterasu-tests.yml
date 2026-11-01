@@ -95,7 +95,14 @@ jobs:
           set -euo pipefail
           OWNER="${GITHUB_REPOSITORY%%/*}"
           REPO="${GITHUB_REPOSITORY##*/}"
-          curl -s -m 30 -o /tmp/state.json             "https://raw.githubusercontent.com/${OWNER}/${REPO}/main/tunnel.json" || true
+          # the file lives under docs/ (what Pages serves), with the harness
+          # copy as a fallback
+          for path in docs/tunnel.json amaterasu/tunnel.json; do
+            code=$(curl -s -m 30 -o /tmp/state.json -w '%{http_code}' \
+              "https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${path}" || echo ERR)
+            echo "GET ${path} -> $code"
+            [ "$code" = "200" ] && break
+          done
           cat /tmp/state.json || true
           python3 - <<'PY'
           import json
