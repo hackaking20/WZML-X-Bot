@@ -31,6 +31,7 @@ _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _state = {
     "auto": True,
+    "awake": False,
     "up": False,
     "started_at": 0.0,
     "last_activity": time.time(),
@@ -136,6 +137,61 @@ async def start_all() -> int:
         _state["raised"] += 1
         LOGGER.info(f"[helpers] raised {started} helper connection(s)")
     return started
+
+
+async def streams_up() -> int:
+    """Start the FileToLink stream clients (and their media pool)."""
+    TgClient = _tg()
+    saved = os.environ.pop("LAZY_CONNECTIONS", None)
+    try:
+        await TgClient.start_stream_clients()
+    except Exception as error:
+        LOGGER.warning(f"[helpers] stream clients failed: {error}")
+    finally:
+        if saved is not None:
+            os.environ["LAZY_CONNECTIONS"] = saved
+    return len([cid for cid in getattr(TgClient, "stream_clients", {}) if cid != 0])
+
+
+async def streams_down() -> int:
+    """Drop every stream client except the bot itself."""
+    TgClient = _tg()
+    closed = 0
+    for cid, client in list(getattr(TgClient, "stream_clients", {}).items()):
+        if cid == 0:
+            continue
+        try:
+            await client.stop()
+            closed += 1
+        except Exception as error:
+            LOGGER.debug(f"[helpers] stream stop {cid}: {error}")
+        finally:
+            TgClient.stream_clients.pop(cid, None)
+            TgClient.stream_loads.pop(cid, None)
+    try:
+        TgClient.stream_prewarm = {}
+    except Exception:
+        pass
+    return closed
+
+
+async def wake(reason: str = "") -> dict:
+    """Bring helpers and stream clients up."""
+    helpers_up = await start_all()
+    streams = await streams_up()
+    _state["last_activity"] = time.time()
+    _state["awake"] = True
+    LOGGER.info(f"[helpers] wake{' — ' + reason if reason else ''}: helpers={helpers_up} streams={streams}")
+    return {"helpers": helpers_up, "streams": streams}
+
+
+async def sleep(reason: str = "") -> dict:
+    """Drop everything that is not the bot's own connection."""
+    helpers_down = await stop_all(reason or "sleep")
+    streams = await streams_down()
+    _state["awake"] = False
+    LOGGER.info(f"[helpers] sleep: helpers={helpers_down} streams={streams}")
+    return {"helpers": helpers_down, "streams": streams}
 
 
 async def ensure_up() -> int:
@@ -275,6 +331,39 @@ async def helpers_command(client, message):
     await send_message(message, _card(), buttons.build_menu(3))
 
 
+async def wake_command(client, message):
+    from bot.helper.telegram_helper.message_utils import send_message
+
+    result = await wake("manual")
+    await send_message(
+        message,
+        f"<b>awake</b>\nhelpers: {result['helpers']} up\nstream clients: {result['streams']} up",
+    )
+
+
+async def sleep_command(client, message):
+    from bot.helper.telegram_helper.message_utils import send_message
+
+    result = await sleep("manual")
+    await send_message(
+        message,
+        "<b>asleep</b>\n"
+        f"helpers dropped: {result['helpers']}\n"
+        f"stream clients dropped: {result['streams']}\n"
+        "only the bot's own Telegram connection remains.",
+    )
+
+
+async def start_wake(client, message):
+    """A /start is a wake signal, in addition to the bot's own reply."""
+    if not _state["auto"]:
+        return
+    try:
+        await wake("/start")
+    except Exception as error:
+        LOGGER.debug(f"[helpers] wake on /start failed: {error}")
+
+
 async def admin_callback(client, query):
     from bot.helper.telegram_helper.message_utils import edit_message
 
@@ -307,7 +396,7 @@ class HelpersPlugin(PluginBase):
         version="1.0.0",
         author="harness",
         description="Connect helper bots only while a task needs them",
-        commands=["helpers"],
+        commands=["helpers", "wake", "sleep"],
     )
 
     async def on_load(self) -> bool:
@@ -329,10 +418,15 @@ class HelpersPlugin(PluginBase):
 
         try:
             from pyrogram import filters as pyrogram_filters
-            from pyrogram.handlers import CallbackQueryHandler
+            from pyrogram.handlers import CallbackQueryHandler, MessageHandler
 
             self.PLUGIN_INFO.handlers.append(
                 CallbackQueryHandler(admin_callback, pyrogram_filters.regex(r"^hlp:"))
+            )
+            from pyrogram.filters import command as _command
+
+            self.PLUGIN_INFO.handlers.append(
+                MessageHandler(start_wake, _command(["start"]))
             )
         except Exception as error:
             LOGGER.debug(f"[helpers] callback handler: {error}")
