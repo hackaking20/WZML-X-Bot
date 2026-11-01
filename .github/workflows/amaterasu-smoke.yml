@@ -101,7 +101,11 @@ jobs:
           hit "/webdl/api/info"
           hit "/links"
           hit "/webdl/api/probe" POST '{"url":"https://download.samplelib.com/mp4/sample-5s.mp4"}'
+          say ""
+          say "=== youtube variants ==="
           hit "/webdl/api/probe" POST '{"url":"https://www.youtube.com/watch"}'
+          hit "/webdl/api/probe" POST '{"url":"https://youtu.be/jNQXAC9IVRw"}'
+          hit "/webdl/api/probe" POST '{"url":"https://www.youtube.com/shorts/dQw4w9WgXcQ"}'
 
           say ""
           say "=== bot output (last 200 lines) ==="
