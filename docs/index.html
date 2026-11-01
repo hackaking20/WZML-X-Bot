@@ -10,8 +10,7 @@
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
     background: #0f1115; color: #e6e6e6;
-    font: 15px/1.6 system-ui, -apple-system, Segoe UI, sans-serif;
-    padding: 24px;
+    font: 15px/1.6 system-ui, -apple-system, Segoe UI, sans-serif; padding: 24px;
   }
   .wrap { width: min(520px, 100%); }
   h1 { font-size: 20px; margin: 0 0 6px; font-weight: 600; }
@@ -20,16 +19,17 @@
     display: block; text-decoration: none; color: inherit;
     background: #171a21; border: 1px solid #23262f; border-radius: 14px;
     padding: 20px 22px; margin-bottom: 14px;
-    transition: border-color .15s, transform .15s;
+    transition: border-color .15s, transform .15s, opacity .15s;
   }
   a.card:hover { border-color: #3b6cf6; transform: translateY(-1px); }
-  a.card.off { opacity: .55; pointer-events: none; }
+  a.card.off { opacity: .5; pointer-events: none; }
   .t { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
   .d { color: #8b93a7; font-size: 13px; }
   .state { color: #8b93a7; font-size: 12px; margin-top: 22px; font-family: ui-monospace, monospace; }
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
   .live { background: #35d07f; }
   .down { background: #ff7a7a; }
+  .wait { background: #d0a635; }
 </style>
 </head>
 <body>
@@ -37,17 +37,17 @@
   <h1>Amaterasu</h1>
   <p class="sub">Two doors. Everything else is behind the second one.</p>
 
-  <a class="card" id="go-web" href="#">
+  <a class="card off" id="go-web" href="#">
     <div class="t">Webpage test</div>
     <div class="d">Open the live web downloader</div>
   </a>
 
-  <a class="card" id="go-links" href="#">
+  <a class="card off" id="go-links" href="#">
     <div class="t">Pages &amp; passwords</div>
     <div class="d">Every page this bot serves, with its password — asks for the password</div>
   </a>
 
-  <div class="state"><span class="dot down" id="dot"></span><span id="state">checking the tunnel…</span></div>
+  <div class="state"><span class="dot wait" id="dot"></span><span id="state">checking the tunnel…</span></div>
 </div>
 
 <script>
@@ -57,36 +57,61 @@
   var dot = document.getElementById('dot');
   var state = document.getElementById('state');
 
-  function setLive(base) {
+  function dotClass(kind) { dot.className = 'dot ' + kind; }
+
+  function open(base) {
     web.href = base + '/webdl';
     links.href = base + '/links';
     web.classList.remove('off');
     links.classList.remove('off');
-    dot.className = 'dot live';
+    dotClass('live');
     state.textContent = 'tunnel ' + base.replace('https://', '');
   }
 
-  function setDown(message) {
-    dot.className = 'dot down';
-    state.textContent = message;
+  function shut(message) {
     web.classList.add('off');
     links.classList.add('off');
+    dotClass('down');
+    state.textContent = message;
   }
 
-  // The runner commits tunnel.json every cycle. Cache-bust so a fresh tunnel
-  // is picked up immediately rather than from a stale edge copy.
+  // Probe the tunnel from the browser. A no-cors request resolves once the
+  // host answers at all (any status) and rejects if it cannot be reached, so
+  // this distinguishes "up" from "dead" without needing CORS headers.
+  function probe(base, done) {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, 7000);
+    fetch(base + '/health', { mode: 'no-cors', signal: controller.signal, cache: 'no-store' })
+      .then(function () { clearTimeout(timer); done(true); })
+      .catch(function () { clearTimeout(timer); done(false); });
+  }
+
   fetch('tunnel.json', { cache: 'no-store' })
     .then(function (r) {
       if (!r.ok) throw new Error('no tunnel.json');
       return r.json();
     })
     .then(function (data) {
-      var url = (data && data.url || '').trim();
+      var url = (data && data.url || '').trim().replace(/\/$/, '');
       if (!url) throw new Error('no url');
-      setLive(url.replace(/\/$/, ''));
+
+      var checked = '';
+      if (data && data.checked) { checked = ' (last checked ' + data.checked + ')'; }
+      state.textContent = 'probing the tunnel' + checked;
+      dotClass('wait');
+
+      probe(url, function (alive) {
+        if (alive) { open(url); return; }
+        // the file may name a tunnel that has since died
+        if (data && data.alive === false) {
+          shut('tunnel is down — the bot is between runs');
+        } else {
+          shut('tunnel did not answer — the bot is probably between runs');
+        }
+      });
     })
     .catch(function () {
-      setDown('no live tunnel right now — the bot is between runs');
+      shut('no tunnel recorded yet — the bot has not published one');
     });
 })();
 </script>
