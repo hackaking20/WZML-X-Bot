@@ -874,8 +874,17 @@ a{{color:#7aa2ff;text-decoration:none}}a:hover{{text-decoration:underline}}
     async def links_login(request: Request):
         from hmac import compare_digest
 
-        form = await request.form()
-        supplied = str(form.get("password", "")).strip()
+        # request.form() needs python-multipart; fall back to the raw body so
+        # the login works even if that package is missing.
+        supplied = ""
+        try:
+            form = await request.form()
+            supplied = str(form.get("password", "")).strip()
+        except Exception:
+            from urllib.parse import parse_qs
+
+            raw = (await request.body()).decode("utf-8", "replace")
+            supplied = (parse_qs(raw).get("password") or [""])[0].strip()
         expected = _web_password()
         if supplied and compare_digest(supplied, expected):
             response = HTMLResponse(_links_html(True, request=request))
