@@ -400,9 +400,41 @@ def _progress_hook(job_id: str):
     return hook
 
 
+def normalise_url(url: str) -> str:
+    """Rewrite a YouTube watch URL into its short form.
+
+    yt-dlp's watch-URL path picks a player client that reports every format as
+    DRM-protected on some videos ("This video is DRM protected"), while the
+    same video via youtu.be or /shorts/ extracts cleanly. Rewriting the URL
+    sidesteps the whole class of failure.
+
+    A URL that explicitly carries list= is left alone, because there the
+    playlist is what was asked for.
+    """
+    try:
+        from urllib.parse import parse_qs, urlparse
+
+        parts = urlparse(url)
+        host = (parts.hostname or "").lower()
+        if not host.endswith("youtube.com") and not host.endswith("youtube-nocookie.com"):
+            return url
+        if parts.path != "/watch":
+            return url
+        query = parse_qs(parts.query)
+        if "list" in query:
+            return url
+        video_id = (query.get("v") or [""])[0].strip()
+        if not video_id:
+            return url
+        return f"https://youtu.be/{video_id}"
+    except Exception:
+        return url
+
+
 def _probe_blocking(url: str) -> dict:
     import yt_dlp
 
+    url = normalise_url(url)
     options = build_options("probe", _work_dir(), "video")
     options.pop("progress_hooks", None)
     options.pop("outtmpl", None)
@@ -712,7 +744,7 @@ def register(app) -> None:
         except Exception:
             return _reply(request, {"detail": "invalid JSON"}, 400)
 
-        url = str(body.get("url") or "").strip()
+        url = normalise_url(str(body.get("url") or "").strip())
         mode = "audio" if str(body.get("mode") or "").lower() == "audio" else "video"
         quality = str(body.get("quality") or "").strip()
 
