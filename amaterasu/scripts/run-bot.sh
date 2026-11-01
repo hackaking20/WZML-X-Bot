@@ -123,6 +123,7 @@ watch_tunnel() {
 }
 
 # ── Main supervision loop ────────────────────────────────────────────────
+mkdir -p "$APP_DIR" 2>/dev/null || true
 cd "$APP_DIR" || { log "missing app dir $APP_DIR"; exit 1; }
 
 # An unset GitHub secret still arrives as an empty string, and Amaterasu's
@@ -161,6 +162,13 @@ cleanup() {
 trap cleanup EXIT
 
 preflight || exit 1
+
+# Called from the workflow before the ~17 minute toolchain install, so a
+# malformed credential costs seconds instead of a full setup.
+if [ "${PREFLIGHT_ONLY:-0}" = "1" ]; then
+    log "preflight-only run: credentials look sane"
+    exit 0
+fi
 
 attempt=0
 fast_fails=0
