@@ -3,6 +3,8 @@ name: Smoke test
 # Boots the bot on a runner for a few minutes, probes it on localhost, and
 # commits the log plus the results. No tunnel involved, so this tests the bot
 # itself rather than the plumbing around it.
+#
+# The report is .txt and force-added: the repo's .gitignore ignores *.log.
 
 on:
   workflow_dispatch:
@@ -48,29 +50,33 @@ jobs:
           FFMPEG_HW_ACCEL: 'none'
         run: |
           mkdir -p diagnostics
-          REPORT=diagnostics/smoke.log
+          REPORT=diagnostics/smoke.txt
           : > "$REPORT"
-          # capture everything from here on, so the report exists even if a
-          # later command dies
           exec > >(tee -a "$REPORT") 2>&1
           set -u
           say() { echo "$*"; }
 
           APP="$GITHUB_WORKSPACE/app"
           say "=== smoke $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
-          say "python: $(python3 -V 2>&1) | ffmpeg: $(ffmpeg -version 2>/dev/null | head -1)"
+          say "python: $(python3 -V 2>&1)"
+          say "ffmpeg: $(ffmpeg -version 2>/dev/null | head -1)"
+          say "app dir: $(ls "$APP" 2>/dev/null | head -5 | tr '\n' ' ')"
 
-          cd "$APP" || { say "no app dir"; exit 0; }
-          ( python -m bot > "$APP/smoke.out" 2>&1 & echo $! > /tmp/bot.pid )
-          say "started pid $(cat /tmp/bot.pid), waiting 100s"
+          cd "$APP" || { say "FATAL: no app dir at $APP"; exit 0; }
+          python -m bot > "$APP/smoke.out" 2>&1 &
+          BOTPID=$!
+          say "started pid $BOTPID, waiting up to 120s for the web server"
 
-          for i in $(seq 1 20); do
+          up=0
+          for i in $(seq 1 24); do
             sleep 5
             if curl -sS -m 3 -o /dev/null "http://127.0.0.1:8080/health" 2>/dev/null; then
+              up=1
               say "web server answered after $((i*5))s"
               break
             fi
           done
+          [ "$up" = "0" ] && say "WARNING: web server never answered on 127.0.0.1:8080"
 
           hit() {
             local path="$1" method="${2:-GET}" data="${3:-}"
@@ -84,7 +90,7 @@ jobs:
             fi
             say ""
             say "--- $method $path -> $code"
-            head -c 800 "$out" | tr -d '\r' | sed 's/^/    /' 
+            head -c 900 "$out" | tr -d '\r' | sed 's/^/    /'
             say ""
             rm -f "$out"
           }
@@ -99,21 +105,22 @@ jobs:
 
           say ""
           say "=== bot output (last 200 lines) ==="
-          tail -200 "$APP/smoke.out" || true
+          tail -200 "$APP/smoke.out" 2>/dev/null || say "no output captured"
           say ""
-          say "=== bot log.txt (last 120 lines) ==="
+          say "=== log.txt (last 120 lines) ==="
           tail -120 "$APP/log.txt" 2>/dev/null || say "no log.txt"
 
-          kill "$(cat /tmp/bot.pid)" 2>/dev/null || true
+          kill "$BOTPID" 2>/dev/null || true
           sleep 2
           pkill -f "python -m bot" 2>/dev/null || true
+          say "=== end ==="
 
       - name: Commit the results
         if: always()
         run: |
           git config user.name "smoke"
           git config user.email "smoke@users.noreply.github.com"
-          git add diagnostics/smoke.log 2>/dev/null || true
+          git add -f diagnostics/smoke.txt 2>/dev/null || true
           if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
           git commit -q -m "smoke: $(date -u +%H:%MZ)"
           git push -q origin HEAD && echo "committed"
