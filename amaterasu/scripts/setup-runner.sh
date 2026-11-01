@@ -222,6 +222,46 @@ for _f in bot/__init__.py bot/core/tg_client.py bot/modules/restart.py; do
         python3 -m py_compile "$APP_DIR/$_f"
     fi
 done
+# ── 4f. Health with lazy connections ─────────────────────────────────────
+# /health counts a stream client as ready only when its media pool is
+# pre-warmed. With LAZY_CONNECTIONS that never happens until /wake, so the bot
+# would report itself degraded (503) while working perfectly.
+python3 - "$APP_DIR" <<'PY_HEALTH'
+import pathlib
+import sys
+
+target = pathlib.Path(sys.argv[1]) / "bot" / "helper" / "health.py"
+if not target.exists():
+    print("[setup] health.py not found; skipping")
+    raise SystemExit(0)
+
+text = target.read_text(encoding="utf-8")
+if "LAZY_HEALTH_PATCH" in text:
+    print("[setup] health lazy patch already present")
+    raise SystemExit(0)
+
+old = "    healthy = crypto_active and bot_connected and stream_pool_ready"
+new = (
+    "    # LAZY_HEALTH_PATCH: with lazy connections the media pool is opened on\n"
+    "    # demand, so its absence is not a fault.\n"
+    "    import os as _os\n"
+    "    if _os.environ.get(\"LAZY_CONNECTIONS\", \"0\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}:\n"
+    "        stream_pool_ready = (\n"
+    "            configured_stream_clients == 0\n"
+    "            or active_stream_clients >= configured_stream_clients\n"
+    "        )\n"
+    "    healthy = crypto_active and bot_connected and stream_pool_ready"
+)
+if old not in text:
+    print("[setup] WARNING: health.py anchor not found")
+else:
+    text = text.replace(old, new, 1)
+    target.write_text(text, encoding="utf-8")
+    print("[setup] patched health.py for lazy connections")
+PY_HEALTH
+python3 -m py_compile "$APP_DIR/bot/helper/health.py" \
+    && echo "[setup] health.py compiles after the lazy patch"
+
 echo "[setup] path patch verified: $(grep -h 'DOWNLOAD_DIR = ' "$APP_DIR/bot/__init__.py" | head -1)"
 
 # ── 4e. Lazy connections ─────────────────────────────────────────────────
