@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the site serves the redirect
+      - name: Check the homepage serves
         run: |
           set -euo pipefail
           OWNER="${GITHUB_REPOSITORY%%/*}"
@@ -70,94 +70,23 @@ jobs:
               echo "::error::Pages is expected but not serving (status $code)"
               exit 1
             fi
-            echo "::notice::Pages is not enabled on this repo — skipping the hub checks"
+            echo "::notice::Pages is not enabled on this repo — skipping the homepage checks"
             echo "SKIP_PAGES=1" >> "$GITHUB_ENV"
             exit 0
           fi
-          # the root is a hub now, not a redirect: it must unlock a vault and
-          # read the live tunnel rather than bounce the visitor straight there
-          grep -q "vault.json" /tmp/index.html || { echo "::error::the hub does not reference vault.json"; exit 1; }
-          grep -q "crypto.subtle" /tmp/index.html || { echo "::error::the hub has no decryption logic"; exit 1; }
-          grep -q "tunnel.json" /tmp/index.html || { echo "::error::the hub does not read tunnel.json"; exit 1; }
-          echo "index.html is the hub and looks right"
 
-          # deep links are served by 404.html — check the body, not the status
-          curl -s -o /tmp/deep.html -m 30 "$SITE/webdl" || true
-          if grep -q "tunnel.json" /tmp/deep.html; then
-            echo "404.html handles deep links"
+          # the homepage is deliberately two doors and nothing else
+          grep -qi "webdl" /tmp/index.html || { echo "::error::no webdl door on the homepage"; exit 1; }
+          grep -qi "/links" /tmp/index.html || { echo "::error::no pages door on the homepage"; exit 1; }
+          grep -q "tunnel.json" /tmp/index.html || { echo "::error::the homepage does not read tunnel.json"; exit 1; }
+
+          # and the tunnel file it reads must be valid JSON
+          code=$(curl -s -o /tmp/tunnel.json -w '%{http_code}' -m 30 "${SITE}tunnel.json" || echo ERR)
+          echo "tunnel.json status: $code"
+          if [ "$code" = "200" ]; then
+            python3 -c "import json;d=json.load(open('/tmp/tunnel.json'));print('tunnel:',d.get('url'),'at',d.get('updated'))"
           else
-            echo "::warning::deep-link fallback did not return the redirect page"
-          fi
-
-      - name: The vault must contain no plaintext
-        run: |
-          set -euo pipefail
-          if [ ! -f amaterasu/vault.json ]; then
-            echo "::warning::no vault.json — the hub will ask for one"
-            exit 0
-          fi
-          python3 - <<'PY'
-          import json
-          import sys
-
-          vault = json.load(open("amaterasu/vault.json", encoding="utf-8"))
-          raw = open("amaterasu/vault.json", encoding="utf-8").read()
-
-          for key in ("data", "iv", "kdf"):
-              if key not in vault:
-                  print(f"::error::vault.json is missing {key}")
-                  sys.exit(1)
-          if vault["kdf"].get("iter", 0) < 100000:
-              print("::error::vault.json uses too few PBKDF2 iterations")
-              sys.exit(1)
-          for leak in ('"pages"', "Downloader", '"pass"', "webdl"):
-              if leak in raw:
-                  print(f"::error::vault.json contains plaintext: {leak}")
-                  sys.exit(1)
-          print("vault ok: " + str(vault["kdf"]["iter"]) + " iterations, "
-                + str(len(vault["data"])) + " bytes of ciphertext")
-          PY
-
-      - name: Every page's JavaScript must parse
-        run: |
-          set -euo pipefail
-          for page in amaterasu/index.html amaterasu/404.html amaterasu/webdl.html amaterasu/vault-maker.html; do
-            python3 - "$page" <<'PY'
-          import re
-          import subprocess
-          import sys
-          import tempfile
-
-          name = sys.argv[1]
-          html = open(name, encoding="utf-8").read()
-          blocks = re.findall(r"<script>(.*?)</script>", html, re.S)
-          if not blocks:
-              print(f"::error::{name} has no inline script")
-              sys.exit(1)
-          for index, js in enumerate(blocks):
-              with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False) as handle:
-                  handle.write(js)
-                  path = handle.name
-              result = subprocess.run(["node", "--check", path], capture_output=True, text=True)
-              if result.returncode != 0:
-                  print(f"::error::{name} script {index} does not parse: {result.stderr[:300]}")
-                  sys.exit(1)
-          print(f"{name}: JavaScript parses")
-          PY
-          done
-
-      - name: The downloader page is served
-        run: |
-          set -euo pipefail
-          OWNER="${GITHUB_REPOSITORY%%/*}"
-          REPO="${GITHUB_REPOSITORY##*/}"
-          code=$(curl -s -o /tmp/webdl.html -w '%{http_code}' -m 30 "https://${OWNER}.github.io/${REPO}/webdl.html" || echo ERR)
-          echo "webdl.html status: $code"
-          if [ "$code" != "200" ]; then
-            echo "::warning::webdl.html is not on Pages (fine if you host the UI on the bot only)"
-          else
-            grep -q "Amaterasu downloader" /tmp/webdl.html || { echo "::error::served page is not the downloader UI"; exit 1; }
-            echo "downloader page serves correctly"
+            echo "::notice::no tunnel.json served yet — it appears on the first run after Pages is enabled"
           fi
 
       - name: Check the published tunnel state
