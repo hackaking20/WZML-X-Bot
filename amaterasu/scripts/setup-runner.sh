@@ -224,6 +224,65 @@ for _f in bot/__init__.py bot/core/tg_client.py bot/modules/restart.py; do
 done
 echo "[setup] path patch verified: $(grep -h 'DOWNLOAD_DIR = ' "$APP_DIR/bot/__init__.py" | head -1)"
 
+# ── 4e. Lazy connections ─────────────────────────────────────────────────
+# Amaterasu pre-warms a FileToLink media-DC session pool for every stream
+# client at boot, and starts a client per STREAM_TOKENS entry. With
+# LAZY_CONNECTIONS=1 both are skipped until /wake asks for them.
+python3 - "$APP_DIR" <<'PY_LAZY'
+import pathlib
+import sys
+
+app = pathlib.Path(sys.argv[1])
+target = app / "bot" / "core" / "tg_client.py"
+if not target.exists():
+    print("[setup] tg_client.py not found; skipping lazy patch")
+    raise SystemExit(0)
+
+text = target.read_text(encoding="utf-8")
+MARK = "LAZY_CONNECTIONS: skipping"
+
+if MARK in text:
+    print("[setup] lazy-connection patch already present")
+    raise SystemExit(0)
+
+guard = (
+    '        import os as _os\n'
+    '        if _os.environ.get("LAZY_CONNECTIONS", "0").strip().lower() in {"1", "true", "yes", "on"}:\n'
+    '            LOGGER.info("LAZY_CONNECTIONS: skipping FileToLink stream pre-warm")\n'
+    '            cls.stream_prewarm = {}\n'
+    '            return\n'
+)
+
+anchor_doc = '        """Verify every stream bot has a live API connection before serving."""\n'
+if anchor_doc in text:
+    text = text.replace(anchor_doc, anchor_doc + guard, 1)
+    print("[setup] patched prewarm_stream_clients")
+else:
+    print("[setup] WARNING: prewarm docstring not found")
+
+anchor_start = '        cls.stream_prewarm = {}\n        cls.stream_clients[0] = cls.bot\n'
+if anchor_start in text:
+    text = text.replace(
+        anchor_start,
+        '        import os as _os2\n'
+        '        if _os2.environ.get("LAZY_CONNECTIONS", "0").strip().lower() in {"1", "true", "yes", "on"}:\n'
+        '            LOGGER.info("LAZY_CONNECTIONS: skipping stream client startup")\n'
+        '            cls.stream_prewarm = {}\n'
+        '            cls.stream_clients[0] = cls.bot\n'
+        '            cls.stream_loads[0] = 0\n'
+        '            return\n'
+        + anchor_start,
+        1,
+    )
+    print("[setup] patched start_stream_clients")
+else:
+    print("[setup] WARNING: start_stream_clients anchor not found")
+
+target.write_text(text, encoding="utf-8")
+PY_LAZY
+python3 -m py_compile "$APP_DIR/bot/core/tg_client.py" \
+    && echo "[setup] tg_client.py compiles after the lazy patch"
+
 # ── 5. Python environment ────────────────────────────────────────────────
 echo "[setup] building virtualenv"
 # Some images export PIP_USER=1, which makes every venv install abort with
