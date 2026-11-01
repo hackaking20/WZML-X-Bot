@@ -105,7 +105,9 @@ jobs:
           # ── Harness knobs ───────────────────────────────────────────────
           WORKER_URL: ${{ secrets.WORKER_URL }}
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
-          PAGES_PUBLISH: '0'
+          # on: the homepage needs the live tunnel URL, so tunnel.json is
+          # committed each run (one small commit per cycle)
+          PAGES_PUBLISH: '1'
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
 
           # ── Runtime defaults for this platform ──────────────────────────
