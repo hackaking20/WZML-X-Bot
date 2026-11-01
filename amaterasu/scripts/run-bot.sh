@@ -98,9 +98,22 @@ watch_tunnel() {
     local last=""
     while :; do
         local url
-        url=$(tail -c 400000 "$BOT_LOG" 2>/dev/null \
-            | grep -aoE 'https://[a-z0-9-]+\.trycloudflare\.com' \
-            | tail -1)
+        # Ask the bot first: it knows its own public URL. Scraping the log is
+        # only a fallback, because the exact wording of that line is not
+        # guaranteed and silently stops matching when upstream changes it.
+        url=$(curl -sS -m 5 "http://127.0.0.1:${PORT:-8080}/api/tunnel" 2>/dev/null \
+            | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("url",""))
+except Exception:
+    print("")' 2>/dev/null || true)
+        url="${url%/}"
+
+        if [ -z "$url" ]; then
+            url=$(tail -c 400000 "$BOT_LOG" 2>/dev/null \
+                | grep -aoE 'https://[a-z0-9-]+\.trycloudflare\.com' \
+                | tail -1)
+        fi
         if [ -n "$url" ] && [ "$url" != "$last" ]; then
             last="$url"
             log "tunnel URL is $url"
