@@ -808,8 +808,28 @@ def register(app) -> None:
         """
         import datetime as _dt
 
+        url = ""
+        # Amaterasu computes BASE_URL into its config; the environment only has
+        # it if the workflow set it explicitly.
+        try:
+            from bot.core.config_manager import Config
+
+            url = str(getattr(Config, "BASE_URL", "") or "")
+        except Exception:
+            url = ""
+        if not url:
+            url = os.environ.get("BASE_URL", "")
+        if not url:
+            # last resort: the tunnel monitor's own record
+            try:
+                from bot.core.cloudflare_tunnel import cloudflare_tunnel
+
+                url = str(getattr(cloudflare_tunnel, "tunnel_url", "") or "")
+            except Exception:
+                url = ""
+
         return {
-            "url": os.environ.get("BASE_URL", "").strip().rstrip("/"),
+            "url": url.strip().rstrip("/"),
             "updated": _dt.datetime.now(_dt.timezone.utc)
             .isoformat(timespec="seconds")
             .replace("+00:00", "Z"),
