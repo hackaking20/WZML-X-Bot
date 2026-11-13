@@ -475,6 +475,7 @@ def _probe_blocking(url: str) -> dict:
     heights = sorted({item["height"] for item in formats}, reverse=True)
     return {
         "playlist": False,
+        "requested": url,
         "title": str(info.get("title") or "")[:200],
         "duration": int(info.get("duration") or 0),
         "uploader": str(info.get("uploader") or "")[:100],
