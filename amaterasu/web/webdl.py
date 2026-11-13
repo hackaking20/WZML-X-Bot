@@ -431,10 +431,63 @@ def normalise_url(url: str) -> str:
         return url
 
 
+def youtube_id(url: str) -> str:
+    """Pull the video id out of any YouTube URL shape."""
+    try:
+        from urllib.parse import parse_qs, urlparse
+
+        parts = urlparse(url)
+        host = (parts.hostname or "").lower()
+        if host.endswith("youtu.be"):
+            return parts.path.strip("/").split("/")[0]
+        if host.endswith("youtube.com") or host.endswith("youtube-nocookie.com"):
+            if parts.path == "/watch":
+                return (parse_qs(parts.query).get("v") or [""])[0]
+            if parts.path.startswith("/shorts/") or parts.path.startswith("/embed/"):
+                return parts.path.split("/")[2]
+        return ""
+    except Exception:
+        return ""
+
+
+def candidate_urls(url: str) -> list:
+    """URL forms to try, in order, for one video.
+
+    The watch and youtu.be paths make yt-dlp pick a client that reports
+    "This video is DRM protected" for some music videos, while the /shorts/
+    form of the same video extracts cleanly. Trying them in turn is cheaper
+    than guessing which quirk applies today.
+    """
+    base = normalise_url(url)
+    video_id = youtube_id(url)
+    if not video_id:
+        return [base]
+    forms = [
+        base,
+        f"https://www.youtube.com/shorts/{video_id}",
+        f"https://www.youtube.com/watch?v={video_id}",
+    ]
+    seen, ordered = set(), []
+    for form in forms:
+        if form not in seen:
+            seen.add(form)
+            ordered.append(form)
+    return ordered
+
+
 def _probe_blocking(url: str) -> dict:
     import yt_dlp
 
-    url = normalise_url(url)
+    last_error = None
+    for attempt_url in candidate_urls(url):
+        try:
+            return _probe_one(yt_dlp, attempt_url)
+        except Exception as error:  # try the next URL form
+            last_error = error
+    raise last_error if last_error else RuntimeError("probe failed")
+
+
+def _probe_one(yt_dlp, url: str) -> dict:
     options = build_options("probe", _work_dir(), "video")
     options.pop("progress_hooks", None)
     options.pop("outtmpl", None)
