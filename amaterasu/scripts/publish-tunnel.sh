@@ -16,8 +16,9 @@ ROOT="${HARNESS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 REPO_ROOT="$(cd "$ROOT/.." 2>/dev/null && pwd || echo "$ROOT")"
 DOCS="$REPO_ROOT/docs"
 
-if [ ! -d "$ROOT/.git" ]; then
-    echo "[publish] no git checkout at $ROOT — skipping"
+# The checkout is the REPO root; the harness lives in a subdirectory of it.
+if [ ! -d "$REPO_ROOT/.git" ]; then
+    echo "[publish] no git checkout at $REPO_ROOT — skipping"
     exit 0
 fi
 
@@ -40,15 +41,16 @@ print(f"[publish] {path} -> {url} at {stamp}")
 PY
 }
 
+HARNESS_REL="$(basename "$ROOT")"
 write_one "$ROOT/tunnel.json"
 if [ -d "$DOCS" ]; then
     write_one "$DOCS/tunnel.json"
 fi
 
-cd "$ROOT" || exit 0
-git add tunnel.json >/dev/null 2>&1 || true
+cd "$REPO_ROOT" || exit 0
+git add -f "$HARNESS_REL/tunnel.json" >/dev/null 2>&1 || true
 if [ -d "$DOCS" ]; then
-    git add docs/tunnel.json >/dev/null 2>&1 || true
+    git add -f docs/tunnel.json >/dev/null 2>&1 || true
 fi
 
 if git diff --cached --quiet; then
