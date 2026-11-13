@@ -182,7 +182,11 @@ except Exception:
         git diff --cached --quiet && exit 0
         git -c user.name="amaterasu-runner" -c user.email="runner@users.noreply.github.com" \
             commit -q -m "diagnostics: runner $(date -u +%H:%MZ)" >/dev/null 2>&1 || exit 0
-        git push -q origin HEAD >/dev/null 2>&1 || true
+        for attempt in 1 2 3 4 5; do
+            git pull --rebase --autostash origin HEAD >/dev/null 2>&1 || true
+            git push -q origin HEAD >/dev/null 2>&1 && break
+            sleep $(( attempt * 3 ))
+        done
     ) &
 }
 
