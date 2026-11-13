@@ -1,15 +1,15 @@
-=== smoke 2026-11-01T14:55:18Z ===
+=== smoke 2026-11-13T11:41:34Z ===
 python: Python 3.12.3
 ffmpeg: ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
 app dir: Dockerfile Dockerfile.base LICENSE README.md bot 
-started pid 3962, waiting up to 120s for the web server
-web server answered after 35s
+started pid 3781, waiting up to 120s for the web server
+web server answered after 20s
 
 --- GET /health -> 200
-    {"status":"ok","checked_at":"2026-11-01T14:55:56.436239+00:00","bot_connection_status":"connected","crypto_library":"WarpCrypto","crypto_acceleration_active":true,"wzgram_version":"3.1.5","max_concurrent_transmissions":8,"hyperdl_token_count":0,"hyperup_token_count":0,"hyper":{"enabled":true,"configured_bot_token_count":0,"active_bot_token_count":0,"configured_user_session_count":0,"active_user_session_count":0,"primary_user_session_active":false},"clients":{"bot":"connected","user":"not_configured","stream":{"configured_count":1,"active_count":1,"prewarmed_count":0,"prewarm_ready":true,"prewarm_states":{},"states":{"0":"connected"}}},"stream_chunk_size":1048576}
+    {"status":"ok","checked_at":"2026-11-13T11:41:58.435616+00:00","bot_connection_status":"connected","crypto_library":"WarpCrypto","crypto_acceleration_active":true,"wzgram_version":"3.1.5","max_concurrent_transmissions":8,"hyperdl_token_count":0,"hyperup_token_count":0,"hyper":{"enabled":true,"configured_bot_token_count":0,"active_bot_token_count":0,"configured_user_session_count":0,"active_user_session_count":0,"primary_user_session_active":false},"clients":{"bot":"connected","user":"not_configured","stream":{"configured_count":1,"active_count":1,"prewarmed_count":0,"prewarm_ready":true,"prewarm_states":{},"states":{"0":"connected"}}},"stream_chunk_size":1048576}
 
 --- GET /api/tunnel -> 200
-    {"url":"https://river-barry-disposition-investigate.trycloudflare.com","updated":"2026-11-01T14:55:56Z"}
+    {"url":"https://delivery-finger-enjoyed-assumed.trycloudflare.com","updated":"2026-11-13T11:41:58Z"}
 
 --- GET /webdl -> 200
     <!doctype html>
@@ -53,7 +53,7 @@ web server answered after 35s
 === youtube variants ===
 
 --- POST /webdl/api/probe -> 422
-    {"detail":"ERROR: [youtube] hCaVEL1UlRE: This video is DRM protected"}
+    {"detail":"ERROR: [youtube:tab] RDDCYmJDO2_IE: YouTube said: This playlist type is unviewable."}
 
 --- POST /webdl/api/probe -> 200
     {"playlist":false,"title":"Me at the zoo","duration":19,"uploader":"jawed","thumbnail":"https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg?sqp=-oaymwEmCOADEOgC8quKqQMa8AEB-AG-AoAC8AGKAgwIABABGFUgWShlMA8=&rs=AOn4CLA9eLBatYv9WbkD4BbZ2Im-biSPTw","ext":"webm","filesize":475961,"heights":[240,144]}
@@ -62,8 +62,8 @@ web server answered after 35s
     {"playlist":false,"title":"Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)","duration":213,"uploader":"Rick Astley","thumbnail":"https://i.ytimg.com/vi_webp/dQw4w9WgXcQ/maxresdefault.webp","ext":"webm","filesize":243768398,"heights":[2160,1440,1080,720,480,360,240,144]}
 
 === bot output (last 200 lines) ===
-[01-Nov-26 02:55:18 PM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
-[01-Nov-26 02:55:18 PM] [INFO] - 
+[13-Nov-26 11:41:35 AM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
+[13-Nov-26 11:41:35 AM] [INFO] - 
 ╔════════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                            ║
 ║        █████╗ ███╗   ███╗ █████╗ ████████╗███████╗██████╗  █████╗ ███████╗██╗   ██╗        ║
@@ -77,83 +77,83 @@ web server answered after 35s
 ║                                 The Black Sun                                              ║
 ║                                                                                            ║
 ╚════════════════════════════════════════════════════════════════════════════════════════════╝
-[01-Nov-26 02:55:22 PM] [INFO] - DB indexes created (blacklisted_users, user_stats)
-[01-Nov-26 02:55:22 PM] [INFO] - Amaterasu database already has data. Skipping WZML-X migration.
-[01-Nov-26 02:55:24 PM] [INFO] - Updating.. Saved Config imported from MongoDB
-[01-Nov-26 02:55:24 PM] [INFO] - Loaded.. Sabnzbd Data from MongoDB
-[01-Nov-26 02:55:24 PM] [INFO] - Users Data has been imported from MongoDB
-[01-Nov-26 08:25:24 PM] [INFO] - Generating client from BOT_TOKEN
-[01-Nov-26 08:25:43 PM] [INFO] - Telegram Premium: disabled on bot account. File size limit: 2 GB
-[01-Nov-26 08:25:43 PM] [INFO] - Amaterasu Bot : [@Mynewleechbot] Started!
-[01-Nov-26 08:25:44 PM] [INFO] - Aria2 initialized successfully.
-[01-Nov-26 08:25:44 PM] [INFO] - Torrents are disabled.
-[01-Nov-26 08:25:44 PM] [INFO] - Torrents are disabled. Skipping qBittorrent initialization.
-[01-Nov-26 08:25:44 PM] [INFO] - Torrents are disabled. Skipping qBittorrent options update.
-[01-Nov-26 08:25:44 PM] [INFO] - Get aria2 options from server
-[2026-11-01 14:55:44 +0000] [4017] [INFO] Starting gunicorn 26.2.0
-[2026-11-01 14:55:44 +0000] [4017] [INFO] Listening at: http://0.0.0.0:8080 (4017)
-[2026-11-01 14:55:44 +0000] [4017] [INFO] Using worker: uvicorn.workers.UvicornWorker
-[2026-11-01 14:55:44 +0000] [4024] [INFO] Booting worker with pid: 4024
-[2026-11-01 14:55:44 +0000] [4017] [INFO] Control socket listening at /run/user/1001/gunicorn.ctl
-[01-Nov-26 02:55:45 PM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
-[2026-11-01 14:55:45 +0000] [4024] [INFO] Started server process [4024]
-[2026-11-01 14:55:45 +0000] [4024] [INFO] Waiting for application startup.
-[01-Nov-26 08:25:46 PM] [INFO] - Daily auto restart scheduled for 06:00 Asia/Kolkata (next run: 2026-11-02T06:00:00+05:30)
-[01-Nov-26 08:25:46 PM] [WARNING] - Torrents are disabled. Skipping search plugin initialization.
-[01-Nov-26 08:25:46 PM] [INFO] - Creating Telegraph Account
-[01-Nov-26 08:25:46 PM] [INFO] - FFmpeg encoder: libx264 (software, FFMPEG_HW_ACCEL=none)
-[01-Nov-26 08:25:46 PM] [INFO] - tunnel_monitor: watching /data/tunnel_url.txt for Cloudflare URL changes
-[01-Nov-26 08:25:46 PM] [INFO] - Engine health checker started (5-minute interval)
-[01-Nov-26 08:25:46 PM] [INFO] - Cleaning Download Directory
-[01-Nov-26 08:25:46 PM] [INFO] - Telegram command menu registered and verified: 61 command(s)
-[01-Nov-26 08:25:46 PM] [INFO] - [helpers] no helper tokens configured — nothing to govern
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /helpers for plugin helpers
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /sleep for plugin helpers
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /wake for plugin helpers
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin helpers loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - [webpass] loaded — /setwebpass available
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /setwebpass for plugin webpass
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin webpass loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - Music plugin loaded (/ms /ld /msdebug)
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /ld for plugin music
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /ms for plugin music
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /msdebug for plugin music
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin music loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - Speedtest plugin loaded
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /speedtest for plugin speedtest_plugin
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin speedtest_plugin loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - [quota] hooks installed (Mirror, YtDlp, TaskListener)
-[01-Nov-26 08:25:46 PM] [INFO] - [quota] loaded — hooks=on, daily limit 15 GB, enforcing=True, partition=p_5212c5d1969c72befe01b9f0
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /addcap for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /botcap for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /dbclean for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /dbstats for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /find for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /quota for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /quotareset for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /qusers for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /usage for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin quota loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - Web UI: qBittorrent available at /qbit/
-[01-Nov-26 08:25:46 PM] [INFO] - Web UI: SABnzbd available at /nzb/
-[01-Nov-26 08:25:46 PM] [INFO] - Amaterasu Client(s) & Services Started !
-[01-Nov-26 08:25:46 PM] [INFO] - Fetched Package Versions!
-[01-Nov-26 02:55:48 PM] [INFO] - DB indexes created (blacklisted_users, user_stats)
-[01-Nov-26 02:55:55 PM] [INFO] - LAZY_CONNECTIONS: skipping stream client startup
-[01-Nov-26 02:55:55 PM] [INFO] - Torrents are disabled. Skipping web qBittorrent client.
-[2026-11-01 14:55:56 +0000] [4024] [INFO] Application startup complete.
-[01-Nov-26 08:26:04 PM] [WARNING] - RSS_CHAT not added! Shutting down rss scheduler...
-ERROR: [youtube] hCaVEL1UlRE: This video is DRM protected
+[13-Nov-26 11:41:38 AM] [INFO] - DB indexes created (blacklisted_users, user_stats)
+[13-Nov-26 11:41:39 AM] [INFO] - Amaterasu database already has data. Skipping WZML-X migration.
+[13-Nov-26 11:41:40 AM] [INFO] - Updating.. Deploy Config changed, merging new config.py values
+[13-Nov-26 11:41:40 AM] [INFO] - Loaded.. Sabnzbd Data from MongoDB
+[13-Nov-26 11:41:41 AM] [INFO] - Users Data has been imported from MongoDB
+[13-Nov-26 05:11:41 PM] [INFO] - Generating client from BOT_TOKEN
+[13-Nov-26 05:11:47 PM] [INFO] - Telegram Premium: disabled on bot account. File size limit: 2 GB
+[13-Nov-26 05:11:47 PM] [INFO] - Amaterasu Bot : [@Mynewleechbot] Started!
+[13-Nov-26 05:11:47 PM] [INFO] - Aria2 initialized successfully.
+[13-Nov-26 05:11:47 PM] [INFO] - Torrents are disabled.
+[13-Nov-26 05:11:47 PM] [INFO] - Torrents are disabled. Skipping qBittorrent initialization.
+[13-Nov-26 05:11:47 PM] [INFO] - Torrents are disabled. Skipping qBittorrent options update.
+[13-Nov-26 05:11:47 PM] [INFO] - Get aria2 options from server
+[2026-11-13 11:41:47 +0000] [3826] [INFO] Starting gunicorn 27.0.1
+[2026-11-13 11:41:47 +0000] [3826] [INFO] Listening at: http://0.0.0.0:8080 (3826)
+[2026-11-13 11:41:47 +0000] [3826] [INFO] Using worker: uvicorn.workers.UvicornWorker
+[2026-11-13 11:41:47 +0000] [3833] [INFO] Booting worker with pid: 3833
+[2026-11-13 11:41:47 +0000] [3826] [INFO] Control socket listening at /run/user/1001/gunicorn.ctl
+[13-Nov-26 11:41:48 AM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
+[2026-11-13 11:41:48 +0000] [3833] [INFO] Started server process [3833]
+[2026-11-13 11:41:48 +0000] [3833] [INFO] Waiting for application startup.
+[13-Nov-26 05:11:48 PM] [INFO] - Daily auto restart scheduled for 06:00 Asia/Kolkata (next run: 2026-11-14T06:00:00+05:30)
+[13-Nov-26 05:11:48 PM] [WARNING] - Torrents are disabled. Skipping search plugin initialization.
+[13-Nov-26 05:11:48 PM] [INFO] - Creating Telegraph Account
+[13-Nov-26 05:11:48 PM] [INFO] - FFmpeg encoder: libx264 (software, FFMPEG_HW_ACCEL=none)
+[13-Nov-26 05:11:48 PM] [INFO] - tunnel_monitor: watching /data/tunnel_url.txt for Cloudflare URL changes
+[13-Nov-26 05:11:48 PM] [INFO] - Engine health checker started (5-minute interval)
+[13-Nov-26 05:11:49 PM] [INFO] - Cleaning Download Directory
+[13-Nov-26 05:11:49 PM] [INFO] - Fetched Package Versions!
+[13-Nov-26 05:11:49 PM] [INFO] - Telegram command menu registered and verified: 61 command(s)
+[13-Nov-26 05:11:49 PM] [INFO] - [helpers] no helper tokens configured — nothing to govern
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /helpers for plugin helpers
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /sleep for plugin helpers
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /wake for plugin helpers
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin helpers loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - [webpass] loaded — /setwebpass available
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /setwebpass for plugin webpass
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin webpass loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - Music plugin loaded (/ms /ld /msdebug)
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /ld for plugin music
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /ms for plugin music
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /msdebug for plugin music
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin music loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - Speedtest plugin loaded
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /speedtest for plugin speedtest_plugin
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin speedtest_plugin loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - [quota] hooks installed (Mirror, YtDlp, TaskListener)
+[13-Nov-26 05:11:49 PM] [INFO] - [quota] loaded — hooks=on, daily limit 15 GB, enforcing=True, partition=p_5212c5d1969c72befe01b9f0
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /addcap for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /botcap for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /dbclean for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /dbstats for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /find for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /quota for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /quotareset for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /qusers for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /usage for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin quota loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - Web UI: qBittorrent available at /qbit/
+[13-Nov-26 05:11:49 PM] [INFO] - Web UI: SABnzbd available at /nzb/
+[13-Nov-26 05:11:49 PM] [INFO] - Amaterasu Client(s) & Services Started !
+[13-Nov-26 11:41:51 AM] [INFO] - DB indexes created (blacklisted_users, user_stats)
+[13-Nov-26 11:41:57 AM] [INFO] - LAZY_CONNECTIONS: skipping stream client startup
+[13-Nov-26 11:41:57 AM] [INFO] - Torrents are disabled. Skipping web qBittorrent client.
+[2026-11-13 11:41:58 +0000] [3833] [INFO] Application startup complete.
+[13-Nov-26 05:12:07 PM] [WARNING] - RSS_CHAT not added! Shutting down rss scheduler...
+ERROR: [youtube:tab] RDDCYmJDO2_IE: YouTube said: This playlist type is unviewable.
 
 === log.txt (last 120 lines) ===
-[01-Nov-26 02:55:17 PM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
-[01-Nov-26 02:55:18 PM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
-[01-Nov-26 02:55:18 PM] [INFO] - 
+[13-Nov-26 11:41:34 AM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
+[13-Nov-26 11:41:35 AM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
+[13-Nov-26 11:41:35 AM] [INFO] - 
 ╔════════════════════════════════════════════════════════════════════════════════════════════╗
 ║                                                                                            ║
 ║        █████╗ ███╗   ███╗ █████╗ ████████╗███████╗██████╗  █████╗ ███████╗██╗   ██╗        ║
@@ -167,67 +167,67 @@ ERROR: [youtube] hCaVEL1UlRE: This video is DRM protected
 ║                                 The Black Sun                                              ║
 ║                                                                                            ║
 ╚════════════════════════════════════════════════════════════════════════════════════════════╝
-[01-Nov-26 02:55:22 PM] [INFO] - DB indexes created (blacklisted_users, user_stats)
-[01-Nov-26 02:55:22 PM] [INFO] - Amaterasu database already has data. Skipping WZML-X migration.
-[01-Nov-26 02:55:24 PM] [INFO] - Updating.. Saved Config imported from MongoDB
-[01-Nov-26 02:55:24 PM] [INFO] - Loaded.. Sabnzbd Data from MongoDB
-[01-Nov-26 02:55:24 PM] [INFO] - Users Data has been imported from MongoDB
-[01-Nov-26 08:25:24 PM] [INFO] - Generating client from BOT_TOKEN
-[01-Nov-26 08:25:43 PM] [INFO] - Telegram Premium: disabled on bot account. File size limit: 2 GB
-[01-Nov-26 08:25:43 PM] [INFO] - Amaterasu Bot : [@Mynewleechbot] Started!
-[01-Nov-26 08:25:44 PM] [INFO] - Aria2 initialized successfully.
-[01-Nov-26 08:25:44 PM] [INFO] - Torrents are disabled.
-[01-Nov-26 08:25:44 PM] [INFO] - Torrents are disabled. Skipping qBittorrent initialization.
-[01-Nov-26 08:25:44 PM] [INFO] - Torrents are disabled. Skipping qBittorrent options update.
-[01-Nov-26 08:25:44 PM] [INFO] - Get aria2 options from server
-[01-Nov-26 02:55:45 PM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
-[01-Nov-26 08:25:46 PM] [INFO] - Daily auto restart scheduled for 06:00 Asia/Kolkata (next run: 2026-11-02T06:00:00+05:30)
-[01-Nov-26 08:25:46 PM] [WARNING] - Torrents are disabled. Skipping search plugin initialization.
-[01-Nov-26 08:25:46 PM] [INFO] - Creating Telegraph Account
-[01-Nov-26 08:25:46 PM] [INFO] - FFmpeg encoder: libx264 (software, FFMPEG_HW_ACCEL=none)
-[01-Nov-26 08:25:46 PM] [INFO] - tunnel_monitor: watching /data/tunnel_url.txt for Cloudflare URL changes
-[01-Nov-26 08:25:46 PM] [INFO] - Engine health checker started (5-minute interval)
-[01-Nov-26 08:25:46 PM] [INFO] - Cleaning Download Directory
-[01-Nov-26 08:25:46 PM] [INFO] - Telegram command menu registered and verified: 61 command(s)
-[01-Nov-26 08:25:46 PM] [INFO] - [helpers] no helper tokens configured — nothing to govern
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /helpers for plugin helpers
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /sleep for plugin helpers
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /wake for plugin helpers
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin helpers loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - [webpass] loaded — /setwebpass available
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /setwebpass for plugin webpass
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin webpass loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - Music plugin loaded (/ms /ld /msdebug)
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /ld for plugin music
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /ms for plugin music
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /msdebug for plugin music
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin music loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - Speedtest plugin loaded
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /speedtest for plugin speedtest_plugin
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin speedtest_plugin loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - [quota] hooks installed (Mirror, YtDlp, TaskListener)
-[01-Nov-26 08:25:46 PM] [INFO] - [quota] loaded — hooks=on, daily limit 15 GB, enforcing=True, partition=p_5212c5d1969c72befe01b9f0
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /addcap for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /botcap for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /dbclean for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /dbstats for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /find for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /quota for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /quotareset for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /qusers for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Registered command /usage for plugin quota
-[01-Nov-26 08:25:46 PM] [INFO] - Bot commands and help refreshed
-[01-Nov-26 08:25:46 PM] [INFO] - Plugin quota loaded successfully
-[01-Nov-26 08:25:46 PM] [INFO] - Web UI: qBittorrent available at /qbit/
-[01-Nov-26 08:25:46 PM] [INFO] - Web UI: SABnzbd available at /nzb/
-[01-Nov-26 08:25:46 PM] [INFO] - Amaterasu Client(s) & Services Started !
-[01-Nov-26 08:25:46 PM] [INFO] - Fetched Package Versions!
-[01-Nov-26 02:55:48 PM] [INFO] - DB indexes created (blacklisted_users, user_stats)
-[01-Nov-26 02:55:55 PM] [INFO] - LAZY_CONNECTIONS: skipping stream client startup
-[01-Nov-26 02:55:55 PM] [INFO] - Torrents are disabled. Skipping web qBittorrent client.
-[01-Nov-26 08:26:04 PM] [WARNING] - RSS_CHAT not added! Shutting down rss scheduler...
+[13-Nov-26 11:41:38 AM] [INFO] - DB indexes created (blacklisted_users, user_stats)
+[13-Nov-26 11:41:39 AM] [INFO] - Amaterasu database already has data. Skipping WZML-X migration.
+[13-Nov-26 11:41:40 AM] [INFO] - Updating.. Deploy Config changed, merging new config.py values
+[13-Nov-26 11:41:40 AM] [INFO] - Loaded.. Sabnzbd Data from MongoDB
+[13-Nov-26 11:41:41 AM] [INFO] - Users Data has been imported from MongoDB
+[13-Nov-26 05:11:41 PM] [INFO] - Generating client from BOT_TOKEN
+[13-Nov-26 05:11:47 PM] [INFO] - Telegram Premium: disabled on bot account. File size limit: 2 GB
+[13-Nov-26 05:11:47 PM] [INFO] - Amaterasu Bot : [@Mynewleechbot] Started!
+[13-Nov-26 05:11:47 PM] [INFO] - Aria2 initialized successfully.
+[13-Nov-26 05:11:47 PM] [INFO] - Torrents are disabled.
+[13-Nov-26 05:11:47 PM] [INFO] - Torrents are disabled. Skipping qBittorrent initialization.
+[13-Nov-26 05:11:47 PM] [INFO] - Torrents are disabled. Skipping qBittorrent options update.
+[13-Nov-26 05:11:47 PM] [INFO] - Get aria2 options from server
+[13-Nov-26 11:41:48 AM] [INFO] - WZGram 3.1.5 native adaptive media pools enabled (cap: 20 sessions, part retries: 4, cleanup: native)
+[13-Nov-26 05:11:48 PM] [INFO] - Daily auto restart scheduled for 06:00 Asia/Kolkata (next run: 2026-11-14T06:00:00+05:30)
+[13-Nov-26 05:11:48 PM] [WARNING] - Torrents are disabled. Skipping search plugin initialization.
+[13-Nov-26 05:11:48 PM] [INFO] - Creating Telegraph Account
+[13-Nov-26 05:11:48 PM] [INFO] - FFmpeg encoder: libx264 (software, FFMPEG_HW_ACCEL=none)
+[13-Nov-26 05:11:48 PM] [INFO] - tunnel_monitor: watching /data/tunnel_url.txt for Cloudflare URL changes
+[13-Nov-26 05:11:48 PM] [INFO] - Engine health checker started (5-minute interval)
+[13-Nov-26 05:11:49 PM] [INFO] - Cleaning Download Directory
+[13-Nov-26 05:11:49 PM] [INFO] - Fetched Package Versions!
+[13-Nov-26 05:11:49 PM] [INFO] - Telegram command menu registered and verified: 61 command(s)
+[13-Nov-26 05:11:49 PM] [INFO] - [helpers] no helper tokens configured — nothing to govern
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /helpers for plugin helpers
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /sleep for plugin helpers
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /wake for plugin helpers
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin helpers loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - [webpass] loaded — /setwebpass available
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /setwebpass for plugin webpass
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin webpass loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - Music plugin loaded (/ms /ld /msdebug)
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /ld for plugin music
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /ms for plugin music
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /msdebug for plugin music
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin music loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - Speedtest plugin loaded
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /speedtest for plugin speedtest_plugin
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin speedtest_plugin loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - [quota] hooks installed (Mirror, YtDlp, TaskListener)
+[13-Nov-26 05:11:49 PM] [INFO] - [quota] loaded — hooks=on, daily limit 15 GB, enforcing=True, partition=p_5212c5d1969c72befe01b9f0
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /addcap for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /botcap for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /dbclean for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /dbstats for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /find for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /quota for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /quotareset for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /qusers for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Registered command /usage for plugin quota
+[13-Nov-26 05:11:49 PM] [INFO] - Bot commands and help refreshed
+[13-Nov-26 05:11:49 PM] [INFO] - Plugin quota loaded successfully
+[13-Nov-26 05:11:49 PM] [INFO] - Web UI: qBittorrent available at /qbit/
+[13-Nov-26 05:11:49 PM] [INFO] - Web UI: SABnzbd available at /nzb/
+[13-Nov-26 05:11:49 PM] [INFO] - Amaterasu Client(s) & Services Started !
+[13-Nov-26 11:41:51 AM] [INFO] - DB indexes created (blacklisted_users, user_stats)
+[13-Nov-26 11:41:57 AM] [INFO] - LAZY_CONNECTIONS: skipping stream client startup
+[13-Nov-26 11:41:57 AM] [INFO] - Torrents are disabled. Skipping web qBittorrent client.
+[13-Nov-26 05:12:07 PM] [WARNING] - RSS_CHAT not added! Shutting down rss scheduler...
 === end ===
