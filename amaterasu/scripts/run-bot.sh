@@ -143,23 +143,45 @@ dump_diagnostics() {
     (
         sleep 120
         repo_root="$(cd "$HARNESS_DIR/.." && pwd)"
-        out="$repo_root/diagnostics/runner.log"
+        out="$repo_root/diagnostics/runner.txt"
         mkdir -p "$repo_root/diagnostics"
+        url=$(curl -sS -m 5 "http://127.0.0.1:${PORT:-8080}/api/tunnel" 2>/dev/null \
+            | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("url",""))
+except Exception:
+    print("")' 2>/dev/null || echo "")
         {
-            echo "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
-            echo "--- api/tunnel (port ${PORT:-8080}) ---"
-            curl -sS -m 5 "http://127.0.0.1:${PORT:-8080}/api/tunnel" 2>&1 || echo "curl failed"
+            echo "=== runner diagnostics $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+            echo "PAGES_PUBLISH=${PAGES_PUBLISH:-unset} PORT=${PORT:-unset} WORKER_URL=${WORKER_URL:+set}"
+            echo "--- /api/tunnel ---"
+            echo "url=[$url]"
             echo
-            echo "--- listening ports ---"
-            (ss -ltnp 2>/dev/null || netstat -ltn 2>/dev/null) | head -20
-            echo "--- log tail ---"
-            tail -150 "$BOT_LOG" 2>/dev/null || echo "no log at $BOT_LOG"
+            echo "--- publish attempt ---"
+            if [ -n "$url" ]; then
+                bash "$HARNESS_DIR/scripts/publish-tunnel.sh" "$url" 2>&1 || echo "publish exited $?"
+            else
+                echo "no url from the bot, so nothing to publish"
+                echo "--- log grep for a tunnel hostname ---"
+                grep -aoE 'https://[a-z0-9-]+\.trycloudflare\.com' "$BOT_LOG" 2>/dev/null | tail -3 || echo "none in $BOT_LOG"
+            fi
+            echo
+            echo "--- git state ---"
+            git -C "$repo_root" status --short | head -10
+            git -C "$repo_root" log --oneline -3 2>/dev/null
+            echo
+            echo "--- harness log (last 40) ---"
+            tail -40 "${HARNESS_LOG:-/dev/null}" 2>/dev/null || echo "no harness log"
+            echo
+            echo "--- bot log (last 60) ---"
+            tail -60 "$BOT_LOG" 2>/dev/null || echo "no bot log"
         } > "$out" 2>&1
         cd "$repo_root" || exit 0
-        git add diagnostics/runner.log >/dev/null 2>&1 || exit 0
+        # .gitignore ignores *.log, so force-add
+        git add -f diagnostics/runner.txt >/dev/null 2>&1 || exit 0
         git diff --cached --quiet && exit 0
         git -c user.name="amaterasu-runner" -c user.email="runner@users.noreply.github.com" \
-            commit -q -m "diagnostics: runner log $(date -u +%H:%MZ)" >/dev/null 2>&1 || exit 0
+            commit -q -m "diagnostics: runner $(date -u +%H:%MZ)" >/dev/null 2>&1 || exit 0
         git push -q origin HEAD >/dev/null 2>&1 || true
     ) &
 }
