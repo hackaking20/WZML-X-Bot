@@ -59,10 +59,19 @@ fi
 if git -c user.name="amaterasu-runner" \
        -c user.email="runner@users.noreply.github.com" \
        commit -q -m "tunnel: $(date -u +%Y-%m-%dT%H:%MZ)" >/dev/null 2>&1; then
-    if git push -q origin HEAD >/dev/null 2>&1; then
-        echo "[publish] pushed tunnel.json"
-    else
-        echo "[publish] push rejected — links stay stale until the next run"
+    # another workflow may be pushing to main at the same moment
+    pushed=0
+    for attempt in 1 2 3 4 5; do
+        git pull --rebase --autostash origin HEAD >/dev/null 2>&1 || true
+        if git push -q origin HEAD >/dev/null 2>&1; then
+            pushed=1
+            echo "[publish] pushed tunnel.json on attempt $attempt"
+            break
+        fi
+        sleep $(( attempt * 3 ))
+    done
+    if [ "$pushed" = "0" ]; then
+        echo "[publish] push rejected 5 times — links stay stale until the next run"
     fi
 else
     echo "[publish] commit failed"
